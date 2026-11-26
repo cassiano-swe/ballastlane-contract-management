@@ -1,0 +1,49 @@
+# Architecture
+
+Clean Architecture places the independent Domain at the center. Application coordinates use cases and depends on Domain; Infrastructure implements technical dependencies; each API is a composition root and may reference Infrastructure for setup. Angular is the visual View. MVC controllers bind HTTP models, map them to application inputs, invoke handlers, and map outputs; application models and domain rules know neither HTTP nor persistence. No Razor views are used.
+
+```mermaid
+graph TD
+  Presentation --> Application
+  Presentation --> Infrastructure
+  Infrastructure --> Application
+  Infrastructure --> Domain
+  Application --> Domain
+```
+
+```mermaid
+graph LR
+  WebApi --> Application
+  WebApi --> Infrastructure
+  IdentityApi --> Application
+  IdentityApi --> Infrastructure
+  Infrastructure --> Domain
+  Infrastructure --> Application
+  Application --> Domain
+```
+
+```mermaid
+graph LR
+  Angular[Angular View] -->|HTTP| Controller
+  Controller --> RequestModel[Request model]
+  Controller --> Handler[Application handler]
+  Handler --> Controller
+  Controller --> ResponseModel[Response model]
+```
+
+`src` contains Domain and Application directly, Infrastructure and Presentation in their own directories. Each API owns its middleware; this small duplication avoids coupling the APIs or adding a shared project. Npgsql's singleton data source is the future ADO.NET entry point. No SQL or repository abstraction is needed by the example. Future SQL must be parameterized. JWT bearer validation requires an externally supplied issuer, audience and signing key, validates expiry, and does not issue tokens. The business API can start without JWT settings in Development for local testing; it cannot validate tokens in that mode, and authorization is not bypassed. In all other business API environments, and in the identity API, JWT settings are required. Swagger v1 is exposed in Development and includes a Bearer scheme.
+
+```mermaid
+graph LR
+  Logging --> Exceptions --> Routing --> CORS --> Authentication --> Authorization --> Endpoints
+```
+
+The APIs use HTTP; TLS termination is intended to be configured in Nginx later. Forwarded headers and trusted proxy settings will need to be configured when that proxy is introduced. Request logging wraps exception handling so it observes the resulting status. It uses structured logs, a trace scope and route templates rather than query strings or request bodies. Exception middleware converts the example's FluentValidation failure to 400 and unexpected exceptions to safe 500 ProblemDetails; it propagates client cancellation and exceptions after a response starts. Authentication and authorization handle their own failures. ProblemDetails includes a trace identifier shared with logs. Normal MVC validation uses framework ProblemDetails behavior.
+
+```mermaid
+graph LR
+  HTTP --> ExampleController --> CalculatePercentageHandler --> PercentageRule
+  PercentageRule --> CalculatePercentageHandler --> ExampleController --> Response
+```
+
+The example is temporary and has no database dependency. See the development guide for removal.

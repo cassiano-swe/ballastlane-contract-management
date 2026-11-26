@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><FrameworkReference Include="Microsoft.AspNetCore.App"/><ProjectReference Include="../../BallastLane.Application/BallastLane.Application.csproj"/><ProjectReference Include="../../BallastLane.Domain/BallastLane.Domain.csproj"/><PackageReference Include="Npgsql"/></ItemGroup></Project>
