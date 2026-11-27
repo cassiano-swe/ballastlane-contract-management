@@ -1,1 +1,1 @@
-export const environment = { production: false, businessApiUrl: 'http://localhost:5101', identityApiUrl: 'http://localhost:5102' };
+export const environment = { production: false, businessApiUrl: '/business-api', identityApiUrl: '/identity-api' };

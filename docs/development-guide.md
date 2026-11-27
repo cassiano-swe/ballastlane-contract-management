@@ -18,4 +18,8 @@ Provision the demo account manually using the seed under `database/seeds` on ver
 
 Add Angular feature folders under `src/app/features`, shared UI under `shared`, cross-cutting services under `core`, and layout components under `layouts`. Configure API URLs for each deployment. Do not embed secrets in frontend files.
 
+With APIs running on the host, start Angular using `npm start` from `src/Presentation/BallastLane.Web`. The development proxy maps `/identity-api/` to port 5102 and `/business-api/` to port 5101. Compose uses the same browser paths and Nginx service targets on port 8080. When introducing a protected business endpoint for the UI, update the explicit route matcher in `core/config/api-config.ts` and cover the new boundary with HTTP tests.
+
+From the repository root, `docker compose up -d --build --wait` starts the full stack, including the Angular build at `http://localhost:4200/login`. To rebuild just the frontend with both APIs already running, use `docker compose up -d --build --no-deps --wait web`.
+
 To remove the temporary demonstration, delete Domain/Examples/Percentage.cs, Application/UseCases/Examples, ExampleController, its request and response models, the handler and validator registrations in the business API composition root, and the example-specific tests and documentation. Keep the middleware and infrastructure configuration. Check Swagger and rerun the suite afterward.

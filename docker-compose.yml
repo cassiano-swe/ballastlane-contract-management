@@ -58,6 +58,17 @@ services:
     depends_on:
       - api
       - identity-api
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          wget -q -O /dev/null http://127.0.0.1/index.html &&
+          wget -q -O /dev/null http://127.0.0.1/identity-api/health &&
+          wget -q -O /dev/null http://127.0.0.1/business-api/health
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
 volumes:
   postgres_data:

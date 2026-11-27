@@ -1,6 +1,6 @@
 # BallastLane
 
-BallastLane is a contract-management interview exercise. The business API supports customer creation, listing, retrieval, update, and deactivation. The Identity API authenticates users and issues the access tokens required by Customer operations. Contract CRUD is TODO. User management and the separate Generative AI Tools assignment are out of scope. The temporary percentage example demonstrates the API architecture.
+BallastLane is a contract-management interview exercise. The Angular workspace provides sign-in and an authenticated dashboard. The business API supports customer creation, listing, retrieval, update, and deactivation. The Identity API authenticates users and issues the access tokens required by Customer operations. Customer screens are the next frontend step. Contract CRUD is TODO. User management and the separate Generative AI Tools assignment are out of scope. The temporary percentage example demonstrates the API architecture.
 
 The solution uses .NET 10, ASP.NET Core MVC API controllers, FluentValidation, Npgsql/ADO.NET, JWT bearer validation, Swagger, Angular standalone components and routing, PostgreSQL, and Docker Compose. See [customer business rules](docs/customer-business-rules.md), [architecture](docs/architecture.md), [development guide](docs/development-guide.md), and [testing strategy](docs/testing-strategy.md).
 
@@ -25,11 +25,13 @@ Both APIs require the same issuer, audience and key at startup, including in Dev
 ## Run with Docker Compose
 
 ```sh
-docker compose up -d --build
+docker compose up -d --build --wait
 docker compose ps
 ```
 
-The web application is served at `http://localhost:4200`. Its `/business-api/` and `/identity-api/` paths are proxied to the `api` and `identity-api` services on port 8080. The business and identity APIs are also available directly at `http://localhost:5101` and `http://localhost:5102`, respectively. Both APIs use `postgres:5432` inside the Compose network, and use the same JWT settings from `.env`. Compose defaults to Development so the Swagger UIs are available; `ASPNETCORE_ENVIRONMENT` can override this. PostgreSQL and API ports bind only to localhost. The database migration is a separate manual step described below; starting Compose does not apply it.
+Compose builds Angular from the npm lockfile and starts its Nginx container as the `web` service. Open `http://localhost:4200/login`. No host-side npm process is needed. Nginx forwards `/business-api/` and `/identity-api/` to the `api` and `identity-api` services on port 8080. With `--wait`, Compose waits for `web` to serve the SPA and reach both API health endpoints through Nginx.
+
+The business and Identity APIs are also available directly at `http://localhost:5101` and `http://localhost:5102`. Both use `postgres:5432` inside the Compose network and share the JWT settings from `.env`. Compose defaults to Development so Swagger is available. Set `ASPNETCORE_ENVIRONMENT` to override it. All published ports bind to localhost. Before the first login, apply the pending migrations and provision the demo account using the procedures below.
 
 For the connection string assembled by Compose, avoid semicolons in database values or use a suitably escaped Npgsql connection string configuration.
 
@@ -48,7 +50,7 @@ npm ci
 npm start
 ```
 
-Run long-lived commands in separate terminals. The business API is at `http://localhost:5101` and its Swagger UI at `http://localhost:5101/swagger`; the identity API is at `http://localhost:5102` and its Swagger UI at `http://localhost:5102/swagger`. Each exposes `/health`. The frontend is at `http://localhost:4200`. The APIs listen over HTTP; TLS termination will be configured later in Nginx. Configure CORS for the local environment as needed. The example `POST /api/examples/calculate-percentage` accepts `{"value":200,"percentage":25}` and returns `{"amount":50}` in Development only.
+Run long-lived commands in separate terminals. The business API is at `http://localhost:5101` with Swagger at `http://localhost:5101/swagger`. The Identity API is at `http://localhost:5102` with Swagger at `http://localhost:5102/swagger`. Each exposes `/health`. Open the frontend at `http://localhost:4200`. The Angular development proxy forwards `/business-api/` and `/identity-api/` to the corresponding loopback hosts, removing the prefix. The browser uses the same origin for the SPA and its API calls, so this setup requires no CORS changes. Use the existing explicit origin configuration for separate cross-origin clients. The local APIs listen over HTTP. The example `POST /api/examples/calculate-percentage` accepts `{"value":200,"percentage":25}` and returns `{"amount":50}` in Development only.
 
 ## Operations and limitations
 
@@ -202,6 +204,8 @@ docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_
 
 The demonstration credentials are `demo@ballastlane.example` and `BallastLane@2026!`. Post the email and password to the Identity API, then use its access token on the business API. This example captures the token without printing it. Avoid shell tracing when running it.
 
+For the browser demo, open `http://localhost:4200/login` and enter the same credentials after provisioning the development account.
+
 ```sh
 token="$(curl --silent --show-error --fail http://localhost:5102/api/auth/login \
   -H 'Content-Type: application/json' \
@@ -222,4 +226,18 @@ The login response returns `accessToken`, `tokenType`, and `expiresIn` with `Cac
 
 In Development Swagger, obtain the token from the Identity API at `http://localhost:5102/swagger` and paste just the JWT into **Authorize** on the business API at `http://localhost:5101/swagger`. Use HTTPS outside isolated local development. The two hosts share a symmetric key, so both can technically issue tokens. Tokens expire after the configured lifetime and are not revoked immediately if an account becomes inactive. Login rate limiting is outside this delivery.
 
-Public registration is excluded by the project owner. Review this decision against the original interview requirements. Angular authentication and Contract CRUD are future work.
+Public registration is excluded by the project owner. Review this decision against the original interview requirements.
+
+## Angular authentication
+
+`/login` is public and `/dashboard` is private. The root and unknown paths lead to the dashboard for an active session or to sign-in otherwise. The frontend keeps the access token in memory, so a full reload requires a new login. An expired session returns to sign-in even when idle. Sign-out clears the local session. An issued JWT remains usable until server-side expiration.
+
+The interceptor attaches Bearer credentials only to the configured business Customer collection and item URLs. A 401 for the current Bearer session returns to sign-in. Login errors stay in the form. The frontend can honor a `Retry-After` header on HTTP 429 if an upstream component sends it. WebApi continues to enforce authorization on Customer operations.
+
+Run the following from `src/Presentation/BallastLane.Web` with Node.js 22 and Chrome available:
+
+```sh
+npm ci
+npm run build
+npm test -- --watch=false --browsers=ChromeHeadless
+```

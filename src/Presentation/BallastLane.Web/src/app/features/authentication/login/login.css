@@ -1,0 +1,8 @@
+.login { padding: clamp(1rem, 5vw, 2rem); }
+h1 { font-size: 1.75rem; letter-spacing: -.025em; }
+p { color: var(--muted); margin-block: .25rem 1.5rem; }
+form { display: grid; gap: .45rem; min-width: 0; }
+mat-form-field { min-width: 0; }
+button { min-height: 44px; }
+.feedback { color: #9a2222; overflow-wrap: anywhere; }
+.feedback:empty { display: none; }
