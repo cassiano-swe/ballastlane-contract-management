@@ -1,5 +1,6 @@
 using BallastLane.Application.Abstractions.Persistence;
 using BallastLane.Application.UseCases.Customers.CreateCustomer;
+using BallastLane.Application.UseCases.Customers.DeleteCustomer;
 using BallastLane.Application.UseCases.Customers.GetCustomerById;
 using BallastLane.Application.UseCases.Customers.ListCustomers;
 using BallastLane.Application.UseCases.Customers.UpdateCustomer;
@@ -33,7 +34,7 @@ public class CustomersControllerTests
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var response = Assert.IsAssignableFrom<IReadOnlyList<ListCustomersResponse>>(ok.Value);
         if (populated)
-            Assert.Equal(new ListCustomersResponse(customer.Id, "Acme", "Shop", CustomerType.Company, "001", "a@example.com", customer.Version),
+            Assert.Equal(new ListCustomersResponse(customer.Id, "Acme", "Shop", CustomerType.Company, "001", "a@example.com", customer.Version, true),
                 Assert.Single(response));
         else
             Assert.Empty(response);
@@ -46,14 +47,14 @@ public class CustomersControllerTests
         var repository = Substitute.For<ICustomerRepository>();
         var id = Guid.NewGuid();
         var version = Guid.NewGuid();
-        var customer = Customer.Reconstitute(id, "Acme", "Shop", CustomerType.Company, "001", "a@example.com", version);
+        var customer = Customer.Reconstitute(id, "Acme", "Shop", CustomerType.Company, "001", "a@example.com", version, false);
         using var source = new CancellationTokenSource();
         repository.GetByIdAsync(id, source.Token).Returns(Task.FromResult<Customer?>(customer));
 
         var result = await CreateController(repository).GetById(id, source.Token);
 
         var ok = Assert.IsType<OkObjectResult>(result.Result);
-        Assert.Equal(new GetCustomerByIdResponse(id, "Acme", "Shop", CustomerType.Company, "001", "a@example.com", version),
+        Assert.Equal(new GetCustomerByIdResponse(id, "Acme", "Shop", CustomerType.Company, "001", "a@example.com", version, false),
             Assert.IsType<GetCustomerByIdResponse>(ok.Value));
         await repository.Received(1).GetByIdAsync(id, source.Token);
     }
@@ -82,7 +83,21 @@ public class CustomersControllerTests
         await repository.Received(1).UpdateAsync(customer, expectedVersion, source.Token);
     }
 
+    [Fact]
+    public async Task DeletePassesIdVersionAndCancellationTokenAndReturnsNoContent()
+    {
+        var repository = Substitute.For<ICustomerRepository>();
+        var customer = new Customer("Acme", null, CustomerType.Company, "001", "a@example.com");
+        var expectedVersion = customer.Version;
+        using var source = new CancellationTokenSource();
+        repository.GetByIdAsync(customer.Id, source.Token).Returns(customer);
+        repository.DeactivateAsync(customer.Id, expectedVersion, Arg.Any<Guid>(), source.Token).Returns(true);
+
+        Assert.IsType<NoContentResult>(await CreateController(repository).Delete(customer.Id, expectedVersion, source.Token));
+        await repository.Received(1).DeactivateAsync(customer.Id, expectedVersion, customer.Version, source.Token);
+    }
+
     private static CustomersController CreateController(ICustomerRepository repository) =>
         new(new CreateCustomerHandler(new(), repository), new ListCustomersHandler(repository),
-            new GetCustomerByIdHandler(new(), repository), new UpdateCustomerHandler(new(), repository));
+            new GetCustomerByIdHandler(new(), repository), new UpdateCustomerHandler(new(), repository), new DeleteCustomerHandler(new(), repository));
 }

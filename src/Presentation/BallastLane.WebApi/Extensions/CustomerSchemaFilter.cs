@@ -17,9 +17,12 @@ public sealed class CustomerSchemaFilter : ISchemaFilter
             || context.Type == typeof(ListCustomersResponse)
             || context.Type == typeof(GetCustomerByIdResponse))
         {
-            schema.Properties["version"].Description = "The optimistic concurrency token representing the current persisted state of the customer. Use this token when updating the customer.";
+            schema.Properties["version"].Description = "The optimistic concurrency token representing the current persisted state of the customer. Use this token when updating or deactivating the customer.";
             schema.Properties["version"].Example = new OpenApiString(ExampleVersion);
         }
+
+        if (context.Type == typeof(ListCustomersResponse) || context.Type == typeof(GetCustomerByIdResponse))
+            schema.Properties["active"].Description = "Whether the customer is currently active.";
 
         if (context.Type == typeof(UpdateCustomerResponse))
         {

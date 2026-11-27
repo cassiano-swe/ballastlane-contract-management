@@ -37,14 +37,14 @@ public class GetCustomerByIdTests
     {
         var id = Guid.NewGuid();
         var version = Guid.NewGuid();
-        var customer = Customer.Reconstitute(id, "Alex Taylor", tradeName, type, "001'23", "alex@example.com", version);
+        var customer = Customer.Reconstitute(id, "Alex Taylor", tradeName, type, "001'23", "alex@example.com", version, tradeName is null);
         using var source = new CancellationTokenSource();
         var repository = Substitute.For<ICustomerRepository>();
         repository.GetByIdAsync(id, source.Token).Returns(Task.FromResult<Customer?>(customer));
 
         var result = await new GetCustomerByIdHandler(new(), repository).HandleAsync(new(id), source.Token);
 
-        Assert.Equal(new GetCustomerByIdOutput(id, "Alex Taylor", tradeName, type, "001'23", "alex@example.com", version), result);
+        Assert.Equal(new GetCustomerByIdOutput(id, "Alex Taylor", tradeName, type, "001'23", "alex@example.com", version, tradeName is null), result);
         await repository.Received(1).GetByIdAsync(id, source.Token);
         Assert.Single(repository.ReceivedCalls());
     }

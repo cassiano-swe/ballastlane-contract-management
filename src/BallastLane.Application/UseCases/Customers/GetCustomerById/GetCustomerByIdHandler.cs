@@ -12,6 +12,6 @@ public sealed class GetCustomerByIdHandler(GetCustomerByIdValidator validator, I
         var customer = await repository.GetByIdAsync(input.Id, cancellationToken)
             ?? throw new CustomerNotFoundException();
 
-        return new(customer.Id, customer.Name, customer.TradeName, customer.CustomerType, customer.TaxId, customer.Email, customer.Version);
+        return new(customer.Id, customer.Name, customer.TradeName, customer.CustomerType, customer.TaxId, customer.Email, customer.Version, customer.Active);
     }
 }

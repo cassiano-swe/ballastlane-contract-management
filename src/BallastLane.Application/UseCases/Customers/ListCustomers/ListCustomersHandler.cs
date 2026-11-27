@@ -8,6 +8,6 @@ public sealed class ListCustomersHandler(ICustomerRepository repository)
     {
         var customers = await repository.ListAsync(cancellationToken);
         return customers.Select(customer => new ListCustomersOutput(
-            customer.Id, customer.Name, customer.TradeName, customer.CustomerType, customer.TaxId, customer.Email, customer.Version)).ToArray();
+            customer.Id, customer.Name, customer.TradeName, customer.CustomerType, customer.TaxId, customer.Email, customer.Version, customer.Active)).ToArray();
     }
 }

@@ -63,7 +63,7 @@ There is no migration runner, authentication workflow, or token issuer. The heal
 {"name":"Acme Corporation","tradeName":"Acme","customerType":"Company","taxId":"00123456789","email":"contact@acme.example"}
 ```
 
-The response adds the generated `id` and `version` to the customer fields. Text is trimmed. Name is required (maximum 200 characters); trade name is optional (maximum 200, Company only); tax ID is required (maximum 50, preserved as a string); email is required and valid (maximum 254). Tax IDs are unique with exact database comparison; no country-specific normalization is applied. Invalid requests return 400; a duplicate tax ID returns 409; unexpected failures return 500. Errors are ProblemDetails with a trace ID; validation failures explain their cause in `detail` and provide field-level messages in `errors`.
+The response adds the generated `id` and `version` to the customer fields. New customers are active by default. Retrieve the customer through its Location to read `active`. Text is trimmed. Name is required (maximum 200 characters); trade name is optional (maximum 200, Company only); tax ID is required (maximum 50, preserved as a string); email is required and valid (maximum 254). Tax IDs are unique across active and inactive customers, with exact database comparison and no country-specific normalization. Invalid requests return 400, a duplicate tax ID returns 409, and unexpected failures return 500. Errors are ProblemDetails with a trace ID. Validation failures explain their cause in `detail` and provide field-level messages in `errors`.
 
 ```json
 {"id":"6d8df8a5-8ef2-4c6e-90f5-1dc89e923c17","name":"Acme Corporation","tradeName":"Acme","customerType":"Company","taxId":"00123456789","email":"contact@acme.example","version":"c53db246-a877-43e1-952d-90fdedfb6781"}
@@ -71,14 +71,17 @@ The response adds the generated `id` and `version` to the customer fields. Text 
 
 ## Customer database migrations
 
-Inspect the local Compose database before applying migrations. On a fresh database, apply both scripts in order. On a database with the original customer schema, apply only the pending `002` script.
+Inspect the healthy local Compose PostgreSQL service before applying migrations. On a fresh database, apply all three scripts in order. On an existing database, inspect the schema and apply only pending scripts.
 
 ```sh
 docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < database/migrations/001_create_customers.sql
 docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < database/migrations/002_add_customer_version.sql
+docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < database/migrations/003_add_customer_active.sql
 ```
 
 The second migration adds the seventh customer column and backfills a distinct UUID per existing customer inside one transaction. Verify with `\d customers` in psql that `version` is `uuid NOT NULL` with the `ck_customers_version` check. Compare the row count and the six original columns before and after, and verify that every row has a non-empty version. Coordinate the migration with the API deployment because the old API writes without the column and the new API reads and writes it.
+
+The third migration adds `active BOOLEAN NOT NULL DEFAULT TRUE` in one transaction. Coordinate a pause in customer writes while verifying the migration. Compare row counts and a deterministic snapshot of the original columns, including `version`, before and after without publishing customer data. Immediately after the first application, verify that all existing rows are active and that the tax ID constraint remains in place. Apply the migration before starting the API that reads `active`. If the column already exists, verify its definition and investigate incompatible schema before proceeding.
 
 ## Customer listing
 
@@ -93,20 +96,25 @@ The second migration adds the seventh customer column and backfills a distinct U
     "customerType": "Individual",
     "taxId": "00123456789",
     "email": "alex@example.com",
-    "version": "c53db246-a877-43e1-952d-90fdedfb6781"
+    "version": "c53db246-a877-43e1-952d-90fdedfb6781",
+    "active": true
   }
 ]
 ```
 
 Unexpected failures return `500 Internal Server Error` with generic ProblemDetails and a request trace ID. Anonymous access is temporary and is not intended for production deployment. Use fictional customer data in local demonstrations.
 
-The repository reads all seven columns in one ordered PostgreSQL query. Listing retrieves all rows without filtering or pagination. As the table grows, database sorting, API memory usage, response size, and network transfer can increase.
+The repository reads all eight columns in one ordered PostgreSQL query. Listing returns active and inactive customers without filtering or pagination. As the table grows, database sorting, API memory usage, response size, and network transfer can increase.
 
 In Development, use `/swagger` for Swagger UI and `/swagger/v1/swagger.json` for the OpenAPI document. Run `dotnet test BallastLane.sln` for unit and integration tests. The PostgreSQL integration tests require Docker and use disposable databases.
 
 ## Customer retrieval by ID
 
-`GET /api/customers/{id}` requires a non-empty UUID in the path. A match returns `200 OK` with the same JSON shape as a successful POST. The response retains the stored ID, version, nullable trade name, and leading zeros in the tax ID. The customer type is the string `Individual` or `Company`.
+`GET /api/customers/{id}` requires a non-empty UUID in the path. A match returns `200 OK` for active and inactive customers. The response includes the stored ID, version, nullable trade name, tax ID and boolean `active`. The customer type is the string `Individual` or `Company`.
+
+```json
+{"id":"6d8df8a5-8ef2-4c6e-90f5-1dc89e923c17","name":"Alex Taylor","tradeName":null,"customerType":"Individual","taxId":"00123456789","email":"alex@example.com","version":"a7280e43-7c4d-4d18-a09e-8c3a214e6732","active":false}
+```
 
 | Status | Outcome |
 | --- | --- |
@@ -115,7 +123,7 @@ In Development, use `/swagger` for Swagger UI and `/swagger/v1/swagger.json` for
 | 404 | No customer with that UUID |
 | 500 | Unexpected failure |
 
-Errors use `application/problem+json` and include a trace ID. The repository reads all seven columns in one parameterized PostgreSQL query using the primary key. It returns null for a missing row. The handler raises a customer-not-found exception that the Web API middleware maps to 404.
+Errors use `application/problem+json` and include a trace ID. The repository reads all eight columns in one parameterized PostgreSQL query using the primary key. It returns null for a missing row. The handler raises a customer-not-found exception that the Web API middleware maps to 404.
 
 The application generates a `Guid` when creating a customer and persists it as a native PostgreSQL `uuid`. POST and both GET responses expose that persisted token as a JSON string. Repeated reads preserve it, and successful updates replace it.
 
@@ -129,7 +137,7 @@ Anonymous access is temporary and is not intended for production deployment. Tes
 {"name":"Acme International","tradeName":"Acme","customerType":"Company","taxId":"00123456789","email":"contact@acme.example","version":"c53db246-a877-43e1-952d-90fdedfb6781"}
 ```
 
-A successful request returns `200 OK` with all seven customer fields and a fresh version, even when the editable values are unchanged.
+A successful request returns `200 OK` with the existing seven-field response and a fresh version, even when the editable values are unchanged. PUT preserves the activation status of active and inactive customers.
 
 ```json
 {"id":"6d8df8a5-8ef2-4c6e-90f5-1dc89e923c17","name":"Acme International","tradeName":"Acme","customerType":"Company","taxId":"00123456789","email":"contact@acme.example","version":"a7280e43-7c4d-4d18-a09e-8c3a214e6732"}
@@ -146,3 +154,25 @@ A successful request returns `200 OK` with all seven customer fields and a fresh
 For example, two people can retrieve the same customer at version A and each submit an edit. Both requests can pass the in-memory check. The database compares the identifier and expected version in the same statement that writes the replacement and new version. Once the first write commits, the second cannot match version A, so it receives a conflict and the first edit remains stored. The server cannot know how to reconcile their edits and performs no automatic retry. On a concurrency conflict, retrieve the current state before deciding whether to send another update.
 
 Errors use `application/problem+json` with a `traceId`. The duplicate tax ID type also applies to POST. Access is temporarily anonymous and must be protected before production use. In Development, Swagger UI at `/swagger` and the OpenAPI document at `/swagger/v1/swagger.json` show both conflict examples. Run `dotnet test BallastLane.sln` with Docker to exercise the endpoint and concurrent writes against disposable PostgreSQL.
+
+## Customer deactivation
+
+`DELETE /api/customers/{id}?version={version}` accepts a non-empty path UUID and a required non-empty query UUID. Get the current version from a customer response. The request has no body.
+
+```http
+DELETE /api/customers/6d8df8a5-8ef2-4c6e-90f5-1dc89e923c17?version=c53db246-a877-43e1-952d-90fdedfb6781
+
+HTTP/1.1 204 No Content
+```
+
+A successful transition sets `active` to false and renews the version while retaining the row and its business data. Repeating DELETE with the inactive customer's current version returns 204 with no write. Reusing a stale token returns 409. Both GET endpoints still return the customer, and its tax ID remains reserved.
+
+| Status | Outcome |
+| --- | --- |
+| 204 | Deactivated or already inactive with the current version |
+| 400 | Invalid identifier or missing or invalid version |
+| 404 | Customer absent |
+| 409 | Stale version (`urn:ballastlane:customer-concurrency-conflict`) |
+| 500 | Unexpected failure with a generic error message |
+
+Concurrent PUT and DELETE writes that read the same active version compete for that version. The database accepts one write and the other receives 409. GET returns the winning state. Reactivation is outside this feature. Anonymous access is temporary and requires access controls before production. The endpoint is documented in the Development Swagger UI.

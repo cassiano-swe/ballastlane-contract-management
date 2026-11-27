@@ -33,7 +33,7 @@ public class GetCustomerByIdTests
         var version = Guid.NewGuid();
         var repository = new CustomerRepository(dataSource);
         await repository.CreateAsync(Customer.Reconstitute(id, "Alex Taylor", null, CustomerType.Individual,
-            "001'23", "alex@example.com", version), default);
+            "001'23", "alex@example.com", version, false), default);
         using var logs = new TestLogProvider();
         await using var app = Factory(connectionString).WithWebHostBuilder(builder =>
             builder.ConfigureLogging(logging => logging.AddProvider(logs)));
@@ -46,16 +46,17 @@ public class GetCustomerByIdTests
         Assert.Equal($"/api/customers/{posted.GetProperty("id").GetGuid()}", created.Headers.Location?.OriginalString);
         using var fetched = await client.GetAsync(created.Headers.Location);
         Assert.Equal(HttpStatusCode.OK, fetched.StatusCode);
-        Assert.True(JsonElement.DeepEquals(posted, await fetched.Content.ReadFromJsonAsync<JsonElement>()));
+        var firstRead = await fetched.Content.ReadFromJsonAsync<JsonElement>();
+        CustomerJsonAssertions.MatchesWriteResponse(posted, firstRead, active: true);
         var postedId = posted.GetProperty("id").GetGuid();
         var postedVersion = posted.GetProperty("version").GetGuid();
         Assert.NotEqual(Guid.Empty, postedVersion);
         var listed = await client.GetFromJsonAsync<JsonElement>("/api/customers");
         Assert.Equal(2, listed.GetArrayLength());
         var listedCustomer = Assert.Single(listed.EnumerateArray(), customer => customer.GetProperty("id").GetGuid() == postedId);
-        Assert.True(JsonElement.DeepEquals(posted, listedCustomer));
+        Assert.True(JsonElement.DeepEquals(firstRead, listedCustomer));
         var readAgain = await client.GetFromJsonAsync<JsonElement>(created.Headers.Location);
-        Assert.True(JsonElement.DeepEquals(posted, readAgain));
+        Assert.True(JsonElement.DeepEquals(firstRead, readAgain));
         await using var persisted = dataSource.CreateCommand("SELECT version FROM customers WHERE id = @id");
         persisted.Parameters.AddWithValue("id", postedId);
         Assert.Equal(postedVersion, Assert.IsType<Guid>(await persisted.ExecuteScalarAsync()));
@@ -64,7 +65,8 @@ public class GetCustomerByIdTests
         Assert.Equal(HttpStatusCode.OK, existing.StatusCode);
         var body = await existing.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal(JsonValueKind.Object, body.ValueKind);
-        Assert.Equal(7, body.EnumerateObject().Count());
+        Assert.Equal(8, body.EnumerateObject().Count());
+        Assert.False(body.GetProperty("active").GetBoolean());
         Assert.Equal(id, body.GetProperty("id").GetGuid());
         Assert.Equal("Alex Taylor", body.GetProperty("name").GetString());
         Assert.Equal(JsonValueKind.Null, body.GetProperty("tradeName").ValueKind);
@@ -203,6 +205,7 @@ public class GetCustomerByIdTests
 
     private sealed class FailingRepository : ICustomerRepository
     {
+        public Task<bool> DeactivateAsync(Guid id, Guid expectedVersion, Guid newVersion, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<bool> UpdateAsync(Customer customer, Guid expectedVersion, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task CreateAsync(Customer customer, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<IReadOnlyList<Customer>> ListAsync(CancellationToken cancellationToken) => throw new NotSupportedException();

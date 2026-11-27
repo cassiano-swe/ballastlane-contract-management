@@ -7,4 +7,5 @@ public interface ICustomerRepository
     Task<IReadOnlyList<Customer>> ListAsync(CancellationToken cancellationToken);
     Task<Customer?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
     Task<bool> UpdateAsync(Customer customer, Guid expectedVersion, CancellationToken cancellationToken);
+    Task<bool> DeactivateAsync(Guid id, Guid expectedVersion, Guid newVersion, CancellationToken cancellationToken);
 }
