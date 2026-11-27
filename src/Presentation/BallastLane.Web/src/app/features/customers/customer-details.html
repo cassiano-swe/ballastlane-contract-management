@@ -1,0 +1,33 @@
+<header class="heading">
+  <h1>Customer Details</h1>
+  <a mat-stroked-button routerLink="/customers">Back to Customers</a>
+</header>
+@let state = customer.state();
+@switch (state.kind) {
+  @case ('loading') { <p role="status">Loading customer…</p> }
+  @case ('error') {
+    <p role="alert">{{ state.problem.message }}
+      @if (state.problem.traceId) { <small>Support reference: {{ state.problem.traceId }}</small> }
+    </p>
+    @if (state.problem.kind !== 'missing') {
+      <button mat-stroked-button (click)="customer.reload()">Retry</button>
+    }
+  }
+  @case ('ready') {
+    @let record = state.value;
+    <section class="panel" aria-label="Customer information">
+      <dl>
+        <div><dt>Name</dt><dd>{{ record.name }}</dd></div>
+        <div><dt>Trade name</dt><dd>{{ record.tradeName ?? 'Not provided' }}</dd></div>
+        <div><dt>Type</dt><dd>{{ record.customerType }}</dd></div>
+        <div><dt>Tax ID</dt><dd>{{ record.taxId }}</dd></div>
+        <div><dt>Email</dt><dd>{{ record.email }}</dd></div>
+        <div><dt>Status</dt><dd><span class="status" [class.inactive]="!record.active">{{ record.active ? 'Active' : 'Inactive' }}</span></dd></div>
+      </dl>
+      <div class="actions">
+        <a mat-flat-button routerLink="edit">Edit</a>
+        <app-customer-deactivate [customer]="record" (refresh)="customer.reload()" />
+      </div>
+    </section>
+  }
+}

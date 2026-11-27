@@ -17,10 +17,16 @@ export const routes: Routes = [
     canActivate: [requireSession],
     canActivateChild: [requireSession],
     loadComponent: () => import('./layouts/main-layout/main-layout').then((m) => m.MainLayout),
-    children: [{
-      path: 'dashboard',
-      loadComponent: () => import('./features/dashboard/dashboard').then((m) => m.Dashboard),
-    }],
+    children: [
+      {
+        path: 'dashboard',
+        loadComponent: () => import('./features/dashboard/dashboard').then((m) => m.Dashboard),
+      },
+      {
+        path: 'customers',
+        loadChildren: () => import('./features/customers/customers.routes').then((m) => m.customerRoutes),
+      },
+    ],
   },
   { path: '**', redirectTo: sessionDestination },
 ];
