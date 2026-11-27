@@ -7,12 +7,25 @@ namespace BallastLane.Domain.UnitTests;
 public class CustomerTests
 {
     [Fact]
+    public void CreatesCustomersWithIndependentNonEmptyVersions()
+    {
+        var first = new Customer("Name", null, CustomerType.Individual, "001", "a@example.com");
+        var second = new Customer("Name", null, CustomerType.Individual, "002", "a@example.com");
+
+        Assert.NotEqual(Guid.Empty, first.Version);
+        Assert.NotEqual(Guid.Empty, second.Version);
+        Assert.NotEqual(first.Version, second.Version);
+    }
+
+    [Fact]
     public void ReconstitutesCustomerWithPersistedIdentityAndText()
     {
         var id = Guid.Parse("078c5ce5-120b-4afa-a6c3-770dfeec1f3c");
-        var customer = Customer.Reconstitute(id, " Name ", null, CustomerType.Individual, "001'23", "a@example.com");
+        var version = Guid.NewGuid();
+        var customer = Customer.Reconstitute(id, " Name ", null, CustomerType.Individual, "001'23", "a@example.com", version);
 
         Assert.Equal(id, customer.Id);
+        Assert.Equal(version, customer.Version);
         Assert.Equal(" Name ", customer.Name);
         Assert.Null(customer.TradeName);
         Assert.Equal(CustomerType.Individual, customer.CustomerType);
@@ -24,7 +37,18 @@ public class CustomerTests
     public void RejectsCorruptedPersistedCustomer()
     {
         Assert.Throws<ArgumentException>(() =>
-            Customer.Reconstitute(Guid.NewGuid(), "Name", null, (CustomerType)99, "001", "a@example.com"));
+            Customer.Reconstitute(Guid.NewGuid(), "Name", null, (CustomerType)99, "001", "a@example.com", Guid.NewGuid()));
+    }
+
+    [Theory]
+    [InlineData(true, "id")]
+    [InlineData(false, "version")]
+    public void RejectsEmptyPersistedIdentifierOrVersion(bool emptyId, string parameter)
+    {
+        var id = emptyId ? Guid.Empty : Guid.NewGuid();
+        var version = emptyId ? Guid.NewGuid() : Guid.Empty;
+        Assert.Throws<ArgumentException>(parameter, () =>
+            Customer.Reconstitute(id, "Name", null, CustomerType.Individual, "001", "a@example.com", version));
     }
 
     [Fact] public void CreatesNormalizedCompany() {

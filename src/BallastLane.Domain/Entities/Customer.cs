@@ -11,18 +11,21 @@ public sealed class Customer
     public CustomerType CustomerType { get; }
     public string TaxId { get; }
     public string Email { get; }
+    public Guid Version { get; }
 
     public Customer(string? name, string? tradeName, CustomerType customerType, string? taxId, string? email)
         : this(Guid.NewGuid(), name?.Trim(), string.IsNullOrWhiteSpace(tradeName) ? null : tradeName.Trim(),
-            customerType, taxId?.Trim(), email?.Trim())
+            customerType, taxId?.Trim(), email?.Trim(), Guid.NewGuid())
     {
     }
 
-    public static Customer Reconstitute(Guid id, string name, string? tradeName, CustomerType customerType, string taxId, string email)
-        => new(id, name, tradeName, customerType, taxId, email);
+    public static Customer Reconstitute(Guid id, string name, string? tradeName, CustomerType customerType, string taxId, string email, Guid version)
+        => new(id, name, tradeName, customerType, taxId, email, version);
 
-    private Customer(Guid id, string? name, string? tradeName, CustomerType customerType, string? taxId, string? email)
+    private Customer(Guid id, string? name, string? tradeName, CustomerType customerType, string? taxId, string? email, Guid version)
     {
+        if (id == Guid.Empty) throw new ArgumentException("Invalid customer identifier.", nameof(id));
+        if (version == Guid.Empty) throw new ArgumentException("Invalid customer version.", nameof(version));
         if (string.IsNullOrWhiteSpace(name) || name.Length > 200) throw new ArgumentException("Invalid name.", nameof(name));
         if (!Enum.IsDefined(customerType)) throw new ArgumentException("Invalid customer type.", nameof(customerType));
         if (tradeName is not null && (string.IsNullOrWhiteSpace(tradeName) || tradeName.Length > 200 || customerType != CustomerType.Company))
@@ -35,5 +38,6 @@ public sealed class Customer
         CustomerType = customerType;
         TaxId = taxId;
         Email = email;
+        Version = version;
     }
 }

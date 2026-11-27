@@ -10,6 +10,6 @@ public sealed class CreateCustomerHandler(CreateCustomerValidator validator, ICu
         await validator.ValidateAndThrowAsync(normalized, cancellationToken);
         var customer = new Customer(normalized.Name, normalized.TradeName, normalized.CustomerType, normalized.TaxId, normalized.Email);
         await repository.CreateAsync(customer, cancellationToken);
-        return new(customer.Id, customer.Name, customer.TradeName, customer.CustomerType, customer.TaxId, customer.Email);
+        return new(customer.Id, customer.Name, customer.TradeName, customer.CustomerType, customer.TaxId, customer.Email, customer.Version);
     }
 }

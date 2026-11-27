@@ -63,15 +63,22 @@ There is no migration runner, authentication workflow, or token issuer. The heal
 {"name":"Acme Corporation","tradeName":"Acme","customerType":"Company","taxId":"00123456789","email":"contact@acme.example"}
 ```
 
-The response contains `id`, `name`, `tradeName`, `customerType`, `taxId`, and `email`. Text is trimmed. Name is required (maximum 200 characters); trade name is optional (maximum 200, Company only); tax ID is required (maximum 50, preserved as a string); email is required and valid (maximum 254). Tax IDs are unique with exact database comparison; no country-specific normalization is applied. Invalid requests return 400; a duplicate tax ID returns 409; unexpected failures return 500. Errors are ProblemDetails with a trace ID; validation failures explain their cause in `detail` and provide field-level messages in `errors`.
+The response adds the generated `id` and `version` to the customer fields. Text is trimmed. Name is required (maximum 200 characters); trade name is optional (maximum 200, Company only); tax ID is required (maximum 50, preserved as a string); email is required and valid (maximum 254). Tax IDs are unique with exact database comparison; no country-specific normalization is applied. Invalid requests return 400; a duplicate tax ID returns 409; unexpected failures return 500. Errors are ProblemDetails with a trace ID; validation failures explain their cause in `detail` and provide field-level messages in `errors`.
 
-The PostgreSQL schema is defined by `database/migrations/001_create_customers.sql`. Configure the local Compose environment as described above, start PostgreSQL, inspect existing tables, then apply once:
-
-```sh
-docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" < database/migrations/001_create_customers.sql
+```json
+{"id":"6d8df8a5-8ef2-4c6e-90f5-1dc89e923c17","name":"Acme Corporation","tradeName":"Acme","customerType":"Company","taxId":"00123456789","email":"contact@acme.example","version":"c53db246-a877-43e1-952d-90fdedfb6781"}
 ```
 
-The shell variables must contain the configured Compose database user and database name. Verify with `\d customers` in psql. The migration creates the six customer columns, a primary key, a unique tax ID constraint, and checks for customer type, trade name and required text. It does not modify an existing table. PostgreSQL resolves concurrent duplicates atomically.
+## Customer database migrations
+
+Inspect the local Compose database before applying migrations. On a fresh database, apply both scripts in order. On a database with the original customer schema, apply only the pending `002` script.
+
+```sh
+docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < database/migrations/001_create_customers.sql
+docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < database/migrations/002_add_customer_version.sql
+```
+
+The second migration adds the seventh customer column and backfills a distinct UUID per existing customer inside one transaction. Verify with `\d customers` in psql that `version` is `uuid NOT NULL` with the `ck_customers_version` check. Compare the row count and the six original columns before and after, and verify that every row has a non-empty version. Coordinate the migration with the API deployment because the old API writes without the column and the new API reads and writes it.
 
 ## Customer listing
 
@@ -85,20 +92,21 @@ The shell variables must contain the configured Compose database user and databa
     "tradeName": null,
     "customerType": "Individual",
     "taxId": "00123456789",
-    "email": "alex@example.com"
+    "email": "alex@example.com",
+    "version": "c53db246-a877-43e1-952d-90fdedfb6781"
   }
 ]
 ```
 
 Unexpected failures return `500 Internal Server Error` with generic ProblemDetails and a request trace ID. Anonymous access is temporary and is not intended for production deployment. Use fictional customer data in local demonstrations.
 
-The repository reads the six columns in one ordered PostgreSQL query. Listing retrieves all rows without filtering or pagination. As the table grows, database sorting, API memory usage, response size, and network transfer can increase.
+The repository reads all seven columns in one ordered PostgreSQL query. Listing retrieves all rows without filtering or pagination. As the table grows, database sorting, API memory usage, response size, and network transfer can increase.
 
 In Development, use `/swagger` for Swagger UI and `/swagger/v1/swagger.json` for the OpenAPI document. Run `dotnet test BallastLane.sln` for unit and integration tests. The PostgreSQL integration tests require Docker and use disposable databases.
 
 ## Customer retrieval by ID
 
-`GET /api/customers/{id}` requires a non-empty UUID in the path. A match returns `200 OK` with one JSON object containing `id`, `name`, `tradeName`, `customerType`, `taxId`, and `email`. The response retains the stored ID, a nullable trade name, and leading zeros in the tax ID. The customer type is the string `Individual` or `Company`.
+`GET /api/customers/{id}` requires a non-empty UUID in the path. A match returns `200 OK` with the same JSON shape as a successful POST. The response retains the stored ID, version, nullable trade name, and leading zeros in the tax ID. The customer type is the string `Individual` or `Company`.
 
 | Status | Outcome |
 | --- | --- |
@@ -107,8 +115,8 @@ In Development, use `/swagger` for Swagger UI and `/swagger/v1/swagger.json` for
 | 404 | No customer with that UUID |
 | 500 | Unexpected failure |
 
-Errors use `application/problem+json` and include a trace ID. The repository reads the six columns in one parameterized PostgreSQL query using the primary key. It returns null for a missing row. The handler raises a customer-not-found exception that the Web API middleware maps to 404.
+Errors use `application/problem+json` and include a trace ID. The repository reads all seven columns in one parameterized PostgreSQL query using the primary key. It returns null for a missing row. The handler raises a customer-not-found exception that the Web API middleware maps to 404.
 
-`ICustomerRepository.GetByIdAsync` can support future update and delete use cases. A successful read does not guarantee the row will still exist when a later write runs. Future mutations must handle concurrent changes and check the affected row count.
+The application generates a `Guid` when creating a customer and persists it as a native PostgreSQL `uuid`. All three responses expose that persisted token as a JSON string. Repeated reads preserve it. Future updates and deletes will compare the expected version and the customer ID in the SQL write predicate and check the affected row count. A successful update will replace the token. The planned API response for a stale version is HTTP 409.
 
 Anonymous access is temporary and is not intended for production deployment. Test this operation in Development at `/swagger` or inspect its schema at `/swagger/v1/swagger.json`. Run `dotnet test BallastLane.sln` with Docker available to exercise both HTTP and PostgreSQL behavior.

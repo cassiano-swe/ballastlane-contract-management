@@ -10,7 +10,7 @@ public sealed class CustomerRepository(NpgsqlDataSource dataSource) : ICustomerR
     public async Task<Customer?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
     {
         await using var command = dataSource.CreateCommand("""
-            SELECT id, name, trade_name, customer_type, tax_id, email
+            SELECT id, name, trade_name, customer_type, tax_id, email, version
             FROM customers
             WHERE id = @id;
             """);
@@ -23,7 +23,7 @@ public sealed class CustomerRepository(NpgsqlDataSource dataSource) : ICustomerR
     public async Task<IReadOnlyList<Customer>> ListAsync(CancellationToken cancellationToken)
     {
         await using var command = dataSource.CreateCommand("""
-            SELECT id, name, trade_name, customer_type, tax_id, email
+            SELECT id, name, trade_name, customer_type, tax_id, email, version
             FROM customers
             ORDER BY name ASC, id ASC;
             """);
@@ -45,17 +45,22 @@ public sealed class CustomerRepository(NpgsqlDataSource dataSource) : ICustomerR
             reader.IsDBNull(2) ? null : reader.GetString(2),
             (CustomerType)reader.GetInt16(3),
             reader.GetString(4),
-            reader.GetString(5));
+            reader.GetString(5),
+            reader.GetGuid(6));
 
     public async Task CreateAsync(Customer customer, CancellationToken cancellationToken)
     {
-        await using var command = dataSource.CreateCommand("INSERT INTO customers (id, name, trade_name, customer_type, tax_id, email) VALUES (@id, @name, @trade_name, @customer_type, @tax_id, @email)");
+        await using var command = dataSource.CreateCommand("""
+            INSERT INTO customers (id, name, trade_name, customer_type, tax_id, email, version)
+            VALUES (@id, @name, @trade_name, @customer_type, @tax_id, @email, @version)
+            """);
         command.Parameters.AddWithValue("id", NpgsqlDbType.Uuid, customer.Id);
         command.Parameters.AddWithValue("name", NpgsqlDbType.Varchar, customer.Name);
         command.Parameters.AddWithValue("trade_name", NpgsqlDbType.Varchar, (object?)customer.TradeName ?? DBNull.Value);
         command.Parameters.AddWithValue("customer_type", NpgsqlDbType.Smallint, (short)customer.CustomerType);
         command.Parameters.AddWithValue("tax_id", NpgsqlDbType.Varchar, customer.TaxId);
         command.Parameters.AddWithValue("email", NpgsqlDbType.Varchar, customer.Email);
+        command.Parameters.AddWithValue("version", NpgsqlDbType.Uuid, customer.Version);
         try { if (await command.ExecuteNonQueryAsync(cancellationToken) != 1) throw new InvalidOperationException("Customer insertion did not affect one row."); }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation && ex.ConstraintName == "uq_customers_tax_id") { throw new CustomerAlreadyExistsException(); }
     }

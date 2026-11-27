@@ -23,7 +23,8 @@ public sealed class ListCustomersDocumentationFilter : IOperationFilter
                 ["tradeName"] = new OpenApiNull(),
                 ["customerType"] = new OpenApiString("Individual"),
                 ["taxId"] = new OpenApiString("00123456789"),
-                ["email"] = new OpenApiString("alex@example.com")
+                ["email"] = new OpenApiString("alex@example.com"),
+                ["version"] = new OpenApiString(CustomerSchemaFilter.ExampleVersion)
             }
         };
     }

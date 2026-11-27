@@ -16,8 +16,7 @@ public class CustomerTests
         await using var database = new PostgreSqlBuilder().WithImage("postgres:17").Build();
         await database.StartAsync();
         await using var ds = NpgsqlDataSource.Create(database.GetConnectionString());
-        var path = Path.Combine(AppContext.BaseDirectory, "001_create_customers.sql");
-        await using (var command = ds.CreateCommand(await File.ReadAllTextAsync(path))) await command.ExecuteNonQueryAsync();
+        await CustomerMigrations.ApplyAllAsync(ds);
         await using var app = new WebApplicationFactory<business::Program>().WithWebHostBuilder(builder => {
             builder.UseEnvironment("Development");
             builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:Postgres"] = database.GetConnectionString(), ["Jwt:Issuer"] = "", ["Jwt:Audience"] = "", ["Jwt:SigningKey"] = "" }));
@@ -31,6 +30,7 @@ public class CustomerTests
         var json = JsonDocument.Parse(await success.Content.ReadAsStringAsync()).RootElement;
         Assert.Equal("001'23", json.GetProperty("taxId").GetString());
         Assert.Equal("Company", json.GetProperty("customerType").GetString());
+        Assert.NotEqual(Guid.Empty, json.GetProperty("version").GetGuid());
         Assert.Equal("/api/customers/" + json.GetProperty("id").GetString(), success.Headers.Location?.ToString());
         var conflict = responses.Single(r => r.StatusCode == HttpStatusCode.Conflict);
         Assert.Equal("application/problem+json", conflict.Content.Headers.ContentType?.MediaType);
@@ -45,6 +45,13 @@ public class CustomerTests
         var swagger = JsonDocument.Parse(await client.GetStringAsync("/swagger/v1/swagger.json")).RootElement;
         var operation = swagger.GetProperty("paths").GetProperty("/api/customers").GetProperty("post");
         Assert.False(operation.TryGetProperty("security", out _));
+        var requestSchema = swagger.GetProperty("components").GetProperty("schemas").GetProperty("CreateCustomerRequest");
+        Assert.False(requestSchema.GetProperty("properties").TryGetProperty("version", out _));
+        var versionSchema = swagger.GetProperty("components").GetProperty("schemas").GetProperty("CreateCustomerResponse")
+            .GetProperty("properties").GetProperty("version");
+        Assert.Equal("string", versionSchema.GetProperty("type").GetString());
+        Assert.Equal("uuid", versionSchema.GetProperty("format").GetString());
+        Assert.NotEqual(Guid.Empty, versionSchema.GetProperty("example").GetGuid());
         var schema = swagger.GetProperty("components").GetProperty("schemas").GetProperty("CustomerType");
         Assert.Equal("string", schema.GetProperty("type").GetString());
         Assert.Equal(new[] { "Individual", "Company" }, schema.GetProperty("enum").EnumerateArray().Select(x => x.GetString()).ToArray());
