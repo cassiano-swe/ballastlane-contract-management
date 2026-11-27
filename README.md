@@ -117,6 +117,32 @@ In Development, use `/swagger` for Swagger UI and `/swagger/v1/swagger.json` for
 
 Errors use `application/problem+json` and include a trace ID. The repository reads all seven columns in one parameterized PostgreSQL query using the primary key. It returns null for a missing row. The handler raises a customer-not-found exception that the Web API middleware maps to 404.
 
-The application generates a `Guid` when creating a customer and persists it as a native PostgreSQL `uuid`. All three responses expose that persisted token as a JSON string. Repeated reads preserve it. Future updates and deletes will compare the expected version and the customer ID in the SQL write predicate and check the affected row count. A successful update will replace the token. The planned API response for a stale version is HTTP 409.
+The application generates a `Guid` when creating a customer and persists it as a native PostgreSQL `uuid`. POST and both GET responses expose that persisted token as a JSON string. Repeated reads preserve it, and successful updates replace it.
 
 Anonymous access is temporary and is not intended for production deployment. Test this operation in Development at `/swagger` or inspect its schema at `/swagger/v1/swagger.json`. Run `dotnet test BallastLane.sln` with Docker available to exercise both HTTP and PostgreSQL behavior.
+
+## Customer update
+
+`PUT /api/customers/{id}` replaces all editable customer fields. Use a non-empty UUID in the path and send the `version` from a previous customer response in the body. The creation validation rules also apply to updates. Omitting `tradeName`, sending null, or sending a blank value clears the stored trade name.
+
+```json
+{"name":"Acme International","tradeName":"Acme","customerType":"Company","taxId":"00123456789","email":"contact@acme.example","version":"c53db246-a877-43e1-952d-90fdedfb6781"}
+```
+
+A successful request returns `200 OK` with all seven customer fields and a fresh version, even when the editable values are unchanged.
+
+```json
+{"id":"6d8df8a5-8ef2-4c6e-90f5-1dc89e923c17","name":"Acme International","tradeName":"Acme","customerType":"Company","taxId":"00123456789","email":"contact@acme.example","version":"a7280e43-7c4d-4d18-a09e-8c3a214e6732"}
+```
+
+| Status | Outcome |
+| --- | --- |
+| 200 | The replacement and its new version were persisted |
+| 400 | Invalid path UUID, version, or replacement fields |
+| 404 | Customer absent on the initial lookup or on the lookup after a zero-row write |
+| 409 | Stale version (`urn:ballastlane:customer-concurrency-conflict`) or duplicate tax ID (`urn:ballastlane:customer-duplicate-tax-id`) |
+| 500 | Unexpected failure with a generic error message |
+
+For example, two people can retrieve the same customer at version A and each submit an edit. Both requests can pass the in-memory check. The database compares the identifier and expected version in the same statement that writes the replacement and new version. Once the first write commits, the second cannot match version A, so it receives a conflict and the first edit remains stored. The server cannot know how to reconcile their edits and performs no automatic retry. On a concurrency conflict, retrieve the current state before deciding whether to send another update.
+
+Errors use `application/problem+json` with a `traceId`. The duplicate tax ID type also applies to POST. Access is temporarily anonymous and must be protected before production use. In Development, Swagger UI at `/swagger` and the OpenAPI document at `/swagger/v1/swagger.json` show both conflict examples. Run `dotnet test BallastLane.sln` with Docker to exercise the endpoint and concurrent writes against disposable PostgreSQL.

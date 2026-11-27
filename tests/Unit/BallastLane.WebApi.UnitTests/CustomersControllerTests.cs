@@ -2,9 +2,11 @@ using BallastLane.Application.Abstractions.Persistence;
 using BallastLane.Application.UseCases.Customers.CreateCustomer;
 using BallastLane.Application.UseCases.Customers.GetCustomerById;
 using BallastLane.Application.UseCases.Customers.ListCustomers;
+using BallastLane.Application.UseCases.Customers.UpdateCustomer;
 using BallastLane.Domain.Entities;
 using BallastLane.Domain.Enums;
 using BallastLane.WebApi.Controllers;
+using BallastLane.WebApi.Models.Requests.Customers;
 using BallastLane.WebApi.Models.Responses.Customers;
 using Microsoft.AspNetCore.Mvc;
 using NSubstitute;
@@ -56,7 +58,31 @@ public class CustomersControllerTests
         await repository.Received(1).GetByIdAsync(id, source.Token);
     }
 
+    [Fact]
+    public async Task UpdateMapsRouteAndBodyAndReturnsNewVersion()
+    {
+        var repository = Substitute.For<ICustomerRepository>();
+        var customer = new Customer("Old", null, CustomerType.Individual, "001", "old@example.com");
+        var expectedVersion = customer.Version;
+        using var source = new CancellationTokenSource();
+        repository.GetByIdAsync(customer.Id, source.Token).Returns(customer);
+        repository.UpdateAsync(customer, expectedVersion, source.Token).Returns(true);
+
+        var result = await CreateController(repository).Update(customer.Id, new UpdateCustomerRequest
+        {
+            Name = "New", TradeName = "Shop", CustomerType = CustomerType.Company,
+            TaxId = "002", Email = "new@example.com", Version = expectedVersion
+        }, source.Token);
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Equal(new UpdateCustomerResponse(customer.Id, "New", "Shop", CustomerType.Company, "002",
+            "new@example.com", customer.Version), Assert.IsType<UpdateCustomerResponse>(ok.Value));
+        Assert.NotEqual(expectedVersion, customer.Version);
+        await repository.Received(1).GetByIdAsync(customer.Id, source.Token);
+        await repository.Received(1).UpdateAsync(customer, expectedVersion, source.Token);
+    }
+
     private static CustomersController CreateController(ICustomerRepository repository) =>
         new(new CreateCustomerHandler(new(), repository), new ListCustomersHandler(repository),
-            new GetCustomerByIdHandler(new(), repository));
+            new GetCustomerByIdHandler(new(), repository), new UpdateCustomerHandler(new(), repository));
 }

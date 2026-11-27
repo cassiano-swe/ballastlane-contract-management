@@ -2,6 +2,7 @@ using System.Text;
 using BallastLane.Application.UseCases.Customers.CreateCustomer;
 using BallastLane.Application.UseCases.Customers.GetCustomerById;
 using BallastLane.Application.UseCases.Customers.ListCustomers;
+using BallastLane.Application.UseCases.Customers.UpdateCustomer;
 using Microsoft.AspNetCore.Mvc;
 using BallastLane.Infrastructure;
 using BallastLane.WebApi.Middleware;
@@ -17,12 +18,21 @@ builder.Services.AddControllers().AddJsonOptions(options => options.JsonSerializ
 builder.Services.Configure<ApiBehaviorOptions>(options => options.InvalidModelStateResponseFactory = context =>
 {
     const string invalidCustomerId = "The customer identifier must be a valid UUID.";
+    const string invalidCustomerVersion = "The customer version is required and must be a valid UUID.";
     var hasRouteId = context.RouteData.Values.ContainsKey("id");
     if (hasRouteId
         && context.ModelState.TryGetValue("id", out var idState) && idState.Errors.Count > 0)
     {
         idState.Errors.Clear();
         idState.Errors.Add(invalidCustomerId);
+    }
+
+    foreach (var entry in context.ModelState.Where(entry =>
+        (entry.Key.Equals("version", StringComparison.OrdinalIgnoreCase) || entry.Key.Equals("$.version", StringComparison.OrdinalIgnoreCase))
+        && entry.Value?.Errors.Count > 0))
+    {
+        entry.Value!.Errors.Clear();
+        entry.Value.Errors.Add(invalidCustomerVersion);
     }
 
     var messages = context.ModelState.Where(entry => entry.Value?.Errors.Count > 0).Select(entry => entry.Key.ToLowerInvariant() switch
@@ -32,6 +42,7 @@ builder.Services.Configure<ApiBehaviorOptions>(options => options.InvalidModelSt
         "customertype" or "$.customertype" => "CustomerType is required and must be either Individual or Company as a string.",
         "taxid" or "$.taxid" => "TaxId is required and must be a string.",
         "email" or "$.email" => "Email is required and must be a string.",
+        "version" or "$.version" => invalidCustomerVersion,
         "id" when hasRouteId => invalidCustomerId,
         _ => "The request body is missing or has an invalid format."
     }).Distinct();
@@ -44,6 +55,8 @@ builder.Services.AddScoped<CreateCustomerHandler>();
 builder.Services.AddScoped<ListCustomersHandler>();
 builder.Services.AddScoped<GetCustomerByIdValidator>();
 builder.Services.AddScoped<GetCustomerByIdHandler>();
+builder.Services.AddScoped<UpdateCustomerValidator>();
+builder.Services.AddScoped<UpdateCustomerHandler>();
 builder.Services.AddProblemDetails();
 builder.Services.AddHealthChecks();
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -65,6 +78,7 @@ builder.Services.AddSwaggerGen(options =>
     options.OperationFilter<AuthorizationDocumentationFilter>();
     options.OperationFilter<ListCustomersDocumentationFilter>();
     options.OperationFilter<GetCustomerByIdDocumentationFilter>();
+    options.OperationFilter<UpdateCustomerDocumentationFilter>();
     options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, $"{typeof(Program).Assembly.GetName().Name}.xml"));
     options.SwaggerDoc("v1", new OpenApiInfo { Title = "BallastLane Business API", Version = "v1" });
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme { Type = SecuritySchemeType.Http, Scheme = "bearer", BearerFormat = "JWT" });

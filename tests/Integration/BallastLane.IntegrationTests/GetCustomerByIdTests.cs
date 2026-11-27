@@ -203,6 +203,7 @@ public class GetCustomerByIdTests
 
     private sealed class FailingRepository : ICustomerRepository
     {
+        public Task<bool> UpdateAsync(Customer customer, Guid expectedVersion, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task CreateAsync(Customer customer, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<IReadOnlyList<Customer>> ListAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<Customer?> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>

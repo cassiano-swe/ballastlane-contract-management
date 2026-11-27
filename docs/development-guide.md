@@ -6,6 +6,8 @@ Put versioned SQL in `database/migrations` when schema requirements exist. Keep 
 
 Apply pending customer migrations in filename order using the local Compose procedure in the README. Before applying `002_add_customer_version.sql`, verify the target schema and check that `gen_random_uuid()` is available. Coordinate application replacement with the migration because earlier builds omit the new required column. After applying it, check the UUID column, constraints, row count, and preserved customer fields before starting the updated API.
 
+Customer update uses the existing version column and tax ID constraint. Verify that migration `002` is present in the target schema before deploying the API. Use disposable databases for mutation testing. In Development, inspect the PUT request schema and both 409 examples in Swagger.
+
 Add Angular feature folders under `src/app/features`, shared UI under `shared`, cross-cutting services under `core`, and layout components under `layouts`. Configure API URLs for each deployment. Do not embed secrets in frontend files.
 
 To remove the temporary demonstration, delete Domain/Examples/Percentage.cs, Application/UseCases/Examples, ExampleController, its request and response models, the handler and validator registrations in the business API composition root, and the example-specific tests and documentation. Keep the middleware and infrastructure configuration. Check Swagger and rerun the suite afterward.

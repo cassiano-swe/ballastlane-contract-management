@@ -1,6 +1,7 @@
 using BallastLane.Application.UseCases.Customers.CreateCustomer;
 using BallastLane.Application.UseCases.Customers.GetCustomerById;
 using BallastLane.Application.UseCases.Customers.ListCustomers;
+using BallastLane.Application.UseCases.Customers.UpdateCustomer;
 using BallastLane.WebApi.Models.Requests.Customers;
 using BallastLane.WebApi.Models.Responses.Customers;
 using Microsoft.AspNetCore.Authorization;
@@ -12,7 +13,8 @@ namespace BallastLane.WebApi.Controllers;
 public sealed class CustomersController(
     CreateCustomerHandler createHandler,
     ListCustomersHandler listHandler,
-    GetCustomerByIdHandler getByIdHandler) : ControllerBase
+    GetCustomerByIdHandler getByIdHandler,
+    UpdateCustomerHandler updateHandler) : ControllerBase
 {
     /// <summary>Retrieves all registered customers.</summary>
     /// <remarks>Returns all customers ordered by name and then ID. Anonymous access is temporary and is not intended for production.</remarks>
@@ -46,6 +48,32 @@ public sealed class CustomersController(
         var customer = await getByIdHandler.HandleAsync(new(id), cancellationToken);
         return Ok(new GetCustomerByIdResponse(
             customer.Id, customer.Name, customer.TradeName, customer.CustomerType, customer.TaxId, customer.Email, customer.Version));
+    }
+
+    /// <summary>Updates an existing customer using optimistic concurrency control.</summary>
+    /// <remarks>Replaces all editable values. An omitted trade name clears it. Each successful update generates a new version, even when values are unchanged. On a concurrency conflict, retrieve the latest customer before deciding whether to submit another update. Anonymous access is temporary and is not intended for production.</remarks>
+    /// <param name="id">The unique, non-empty customer UUID.</param>
+    /// <param name="request">The replacement values and expected customer version.</param>
+    /// <param name="cancellationToken">The request cancellation token.</param>
+    /// <response code="200">The updated customer with the newly persisted version.</response>
+    /// <response code="400">The identifier, version, or replacement values are invalid.</response>
+    /// <response code="404">No customer has the requested identifier.</response>
+    /// <response code="409">The customer version is stale or the tax ID belongs to another customer.</response>
+    /// <response code="500">An unexpected error occurred. The response includes a request trace identifier.</response>
+    [HttpPut("{id}")]
+    [ProducesResponseType<UpdateCustomerResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status500InternalServerError, "application/problem+json")]
+    public async Task<ActionResult<UpdateCustomerResponse>> Update(
+        [FromRoute] Guid id, [FromBody] UpdateCustomerRequest request, CancellationToken cancellationToken)
+    {
+        var result = await updateHandler.HandleAsync(
+            new(id, request.Name, request.TradeName, request.CustomerType!.Value, request.TaxId, request.Email, request.Version!.Value),
+            cancellationToken);
+        return Ok(new UpdateCustomerResponse(
+            result.Id, result.Name, result.TradeName, result.CustomerType, result.TaxId, result.Email, result.Version));
     }
 
     /// <summary>Creates a customer.</summary>
