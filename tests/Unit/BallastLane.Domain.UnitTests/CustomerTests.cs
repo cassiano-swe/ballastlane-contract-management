@@ -22,7 +22,7 @@ public class CustomerTests
     {
         var id = Guid.Parse("078c5ce5-120b-4afa-a6c3-770dfeec1f3c");
         var version = Guid.NewGuid();
-        var customer = Customer.Reconstitute(id, " Name ", null, CustomerType.Individual, "001'23", "a@example.com", version);
+        var customer = Customer.Reconstitute(id, " Name ", null, CustomerType.Individual, "001'23", "a@example.com", version, true);
 
         Assert.Equal(id, customer.Id);
         Assert.Equal(version, customer.Version);
@@ -37,7 +37,7 @@ public class CustomerTests
     public void RejectsCorruptedPersistedCustomer()
     {
         Assert.Throws<ArgumentException>(() =>
-            Customer.Reconstitute(Guid.NewGuid(), "Name", null, (CustomerType)99, "001", "a@example.com", Guid.NewGuid()));
+            Customer.Reconstitute(Guid.NewGuid(), "Name", null, (CustomerType)99, "001", "a@example.com", Guid.NewGuid(), true));
     }
 
     [Theory]
@@ -48,7 +48,7 @@ public class CustomerTests
         var id = emptyId ? Guid.Empty : Guid.NewGuid();
         var version = emptyId ? Guid.NewGuid() : Guid.Empty;
         Assert.Throws<ArgumentException>(parameter, () =>
-            Customer.Reconstitute(id, "Name", null, CustomerType.Individual, "001", "a@example.com", version));
+            Customer.Reconstitute(id, "Name", null, CustomerType.Individual, "001", "a@example.com", version, true));
     }
 
     [Fact] public void CreatesNormalizedCompany() {

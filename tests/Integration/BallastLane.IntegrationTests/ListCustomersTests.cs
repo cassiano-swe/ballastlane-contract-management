@@ -86,8 +86,9 @@ public class ListCustomersTests
         Assert.Contains("[]", ok.GetProperty("description").GetString());
         var success = ok.GetProperty("content").GetProperty("application/json");
         Assert.Equal("array", success.GetProperty("schema").GetProperty("type").GetString());
-        var example = Assert.Single(success.GetProperty("example").EnumerateArray());
-        Assert.NotEqual(Guid.Empty, example.GetProperty("version").GetGuid());
+        var examples = success.GetProperty("example").EnumerateArray().ToArray();
+        Assert.Equal(new[] { true, false }, examples.Select(example => example.GetProperty("active").GetBoolean()));
+        Assert.All(examples, example => Assert.NotEqual(Guid.Empty, example.GetProperty("version").GetGuid()));
         var schemas = swagger.RootElement.GetProperty("components").GetProperty("schemas");
         var customerProperties = schemas.GetProperty("ListCustomersResponse").GetProperty("properties");
         Assert.True(customerProperties.GetProperty("tradeName").GetProperty("nullable").GetBoolean());
@@ -154,7 +155,8 @@ public class ListCustomersTests
 
     private static void AssertCustomer(JsonElement customer, string name, string? tradeName, string type, string taxId, string email)
     {
-        Assert.Equal(7, customer.EnumerateObject().Count());
+        Assert.Equal(8, customer.EnumerateObject().Count());
+        Assert.True(customer.GetProperty("active").GetBoolean());
         Assert.Equal(name, customer.GetProperty("name").GetString());
         Assert.Equal(tradeName, customer.GetProperty("tradeName").GetString());
         Assert.Equal(type, customer.GetProperty("customerType").GetString());
@@ -164,6 +166,7 @@ public class ListCustomersTests
 
     private sealed class FailingRepository : ICustomerRepository
     {
+        public Task<bool> DeactivateAsync(Guid id, Guid expectedVersion, Guid newVersion, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<bool> UpdateAsync(Customer customer, Guid expectedVersion, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task CreateAsync(Customer customer, CancellationToken cancellationToken) => throw new NotSupportedException();
 

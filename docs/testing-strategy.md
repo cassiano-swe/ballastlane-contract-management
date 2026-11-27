@@ -33,3 +33,11 @@ The baseline passed 64 unit tests and 21 integration tests. Domain and Applicati
 Domain and Application tests cover validation, state preservation, token rotation, expected-version forwarding, cancellation, and classification after a zero-row write. Repository integration tests apply the existing migrations to disposable PostgreSQL, exercise stale and duplicate writes, and run competing writes from independent connections. The HTTP race uses a test-only repository wrapper to hold both initial reads until they have independently observed the same version. It verifies two write attempts, one 200, one 409, and a final state matching the winning response. A sequential HTTP test verifies that a stale write leaves the stored state unchanged, that a fresh version permits another update, and that both GET responses expose the stored version.
 
 The final solution run with `dotnet test BallastLane.sln --no-restore -m:1` passed 88 unit tests and 37 integration tests, including the Swagger UI and OpenAPI checks and the existing POST, GET, and migration regressions.
+
+## DeleteCustomer verification
+
+The pre-change baseline passed 88 unit tests and 37 integration tests. The new Domain and Application tests were written before the corresponding code. Their first builds failed on missing domain members and a missing use case namespace. These are compile-time red states. The HTTP, repository and migration tests were verified after implementation.
+
+Integration tests apply all migrations in order to fresh PostgreSQL 17 containers. A separate migration test applies `003` to a schema with existing rows and checks preservation of identifiers, business data and versions, plus the default and null constraint. The HTTP lifecycle verifies the original row remains retrievable and retains its tax ID after deactivation. Tests also verify repeated DELETE, PUT on inactive customers, traceable errors, request logs and OpenAPI. At repository level, two independent data sources compete for one version. At HTTP level, a test-only gate makes both requests read the same version before DELETE competes with another DELETE or PUT.
+
+The full solution passed 103 unit tests and 49 integration tests with `dotnet test BallastLane.sln --no-restore -m:1`. Migration verification used isolated databases.

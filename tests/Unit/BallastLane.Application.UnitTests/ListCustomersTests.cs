@@ -22,13 +22,14 @@ public class ListCustomersTests
             new("Zeta", null, CustomerType.Individual, "001", "a@example.com"),
             new("Acme", "Shop", CustomerType.Company, "002", "b@example.com")
         ];
+        customers[1].Deactivate();
         var stored = customers[..count];
         repository.ListAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult<IReadOnlyList<Customer>>(stored));
 
         var result = await new ListCustomersHandler(repository).HandleAsync(source.Token);
 
         Assert.Equal(stored.Select(customer => new ListCustomersOutput(
-            customer.Id, customer.Name, customer.TradeName, customer.CustomerType, customer.TaxId, customer.Email, customer.Version)), result);
+            customer.Id, customer.Name, customer.TradeName, customer.CustomerType, customer.TaxId, customer.Email, customer.Version, customer.Active)), result);
         await repository.Received(1).ListAsync(Arg.Any<CancellationToken>());
         await repository.Received().ListAsync(source.Token);
     }

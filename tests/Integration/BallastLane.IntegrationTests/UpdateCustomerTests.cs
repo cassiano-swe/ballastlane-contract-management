@@ -35,10 +35,12 @@ public class UpdateCustomerTests
         var (path, created) = await CreateAsync(client, "001");
         await CreateAsync(client, "002");
         var initial = await ReadAsync(client, path);
-        Assert.True(JsonElement.DeepEquals(created, initial));
+        CustomerJsonAssertions.MatchesWriteResponse(created, initial, active: true);
         var originalVersion = Version(initial);
 
-        using var first = await client.PutAsJsonAsync(path, Body(" Updated ", "001'23", originalVersion));
+        var replacement = Body(" Updated ", "001'23", originalVersion);
+        replacement["active"] = false;
+        using var first = await client.PutAsJsonAsync(path, replacement);
         Assert.Equal(HttpStatusCode.OK, first.StatusCode);
         var updated = await first.Content.ReadFromJsonAsync<JsonElement>();
         var newVersion = Version(updated);
@@ -62,15 +64,16 @@ public class UpdateCustomerTests
         using var duplicate = await client.PutAsJsonAsync(path, Body("Duplicate", "002", newVersion));
         var duplicateProblem = await ProblemAsync(duplicate, HttpStatusCode.Conflict, path);
         Assert.Equal("urn:ballastlane:customer-duplicate-tax-id", duplicateProblem.GetProperty("type").GetString());
-        Assert.True(JsonElement.DeepEquals(updated, await ReadAsync(client, path)));
+        CustomerJsonAssertions.MatchesWriteResponse(updated, await ReadAsync(client, path), active: true);
 
         using var repeat = await client.PutAsJsonAsync(path, Body("Updated", "001'23", newVersion));
         Assert.Equal(HttpStatusCode.OK, repeat.StatusCode);
         var latest = await repeat.Content.ReadFromJsonAsync<JsonElement>();
         Assert.NotEqual(newVersion, Version(latest));
-        Assert.True(JsonElement.DeepEquals(latest, await ReadAsync(client, path)));
+        var current = await ReadAsync(client, path);
+        CustomerJsonAssertions.MatchesWriteResponse(latest, current, active: true);
         var collection = await ReadAsync(client, "/api/customers");
-        Assert.Contains(collection.EnumerateArray(), item => JsonElement.DeepEquals(item, latest));
+        Assert.Contains(collection.EnumerateArray(), item => JsonElement.DeepEquals(item, current));
         var persisted = Assert.IsType<Customer>(await new CustomerRepository(source).GetByIdAsync(latest.GetProperty("id").GetGuid(), default));
         Assert.Equal(Version(latest), persisted.Version);
 
@@ -108,7 +111,7 @@ public class UpdateCustomerTests
         var winner = await success.Content.ReadFromJsonAsync<JsonElement>();
         Assert.NotEqual(version, Version(winner));
         Assert.Equal(ReferenceEquals(success, one) ? "First" : "Second", winner.GetProperty("name").GetString());
-        Assert.True(JsonElement.DeepEquals(winner, await ReadAsync(client, path)));
+        CustomerJsonAssertions.MatchesWriteResponse(winner, await ReadAsync(client, path), active: true);
     }
 
     [Theory]
@@ -200,7 +203,7 @@ public class UpdateCustomerTests
         Assert.Equal("uuid", schemas.GetProperty("UpdateCustomerResponse").GetProperty("properties").GetProperty("version").GetProperty("format").GetString());
     }
 
-    private static WebApplicationFactory<business::Program> Factory(string? connectionString = null,
+    internal static WebApplicationFactory<business::Program> Factory(string? connectionString = null,
         ICustomerRepository? repository = null, Action<IWebHostBuilder>? configure = null) =>
         new WebApplicationFactory<business::Program>().WithWebHostBuilder(builder =>
         {
@@ -215,13 +218,13 @@ public class UpdateCustomerTests
             configure?.Invoke(builder);
         });
 
-    private static Dictionary<string, object?> Body(string name, string taxId, Guid version) => new()
+    internal static Dictionary<string, object?> Body(string name, string taxId, Guid version) => new()
     {
         ["name"] = name, ["customerType"] = "Individual", ["taxId"] = taxId,
         ["email"] = "update@example.com", ["version"] = version
     };
 
-    private static async Task<(string Path, JsonElement Customer)> CreateAsync(HttpClient client, string taxId)
+    internal static async Task<(string Path, JsonElement Customer)> CreateAsync(HttpClient client, string taxId)
     {
         using var response = await client.PostAsJsonAsync("/api/customers",
             new { name = "Old", tradeName = "Shop", customerType = "Company", taxId, email = "old@example.com" });
@@ -229,10 +232,10 @@ public class UpdateCustomerTests
         return (response.Headers.Location!.OriginalString, await response.Content.ReadFromJsonAsync<JsonElement>());
     }
 
-    private static Task<JsonElement> ReadAsync(HttpClient client, string path) => client.GetFromJsonAsync<JsonElement>(path);
-    private static Guid Version(JsonElement customer) => customer.GetProperty("version").GetGuid();
+    internal static Task<JsonElement> ReadAsync(HttpClient client, string path) => client.GetFromJsonAsync<JsonElement>(path);
+    internal static Guid Version(JsonElement customer) => customer.GetProperty("version").GetGuid();
 
-    private static async Task<JsonElement> ProblemAsync(HttpResponseMessage response, HttpStatusCode status, string path)
+    internal static async Task<JsonElement> ProblemAsync(HttpResponseMessage response, HttpStatusCode status, string path)
     {
         Assert.Equal(status, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
@@ -243,15 +246,16 @@ public class UpdateCustomerTests
         return problem;
     }
 
-    private sealed class FailingRepository : ICustomerRepository
+    internal sealed class FailingRepository : ICustomerRepository
     {
+        public Task<bool> DeactivateAsync(Guid id, Guid expectedVersion, Guid newVersion, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<Customer?> GetByIdAsync(Guid id, CancellationToken cancellationToken) => throw new InvalidOperationException("sensitive-repository-detail");
         public Task CreateAsync(Customer customer, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<IReadOnlyList<Customer>> ListAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<bool> UpdateAsync(Customer customer, Guid expectedVersion, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
-    private sealed class RacingRepository(CustomerRepository inner) : ICustomerRepository
+    internal sealed class RacingRepository(CustomerRepository inner) : ICustomerRepository
     {
         private readonly TaskCompletionSource gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly ConcurrentQueue<Guid> observedVersions = new();
@@ -284,5 +288,15 @@ public class UpdateCustomerTests
 
         public Task CreateAsync(Customer customer, CancellationToken cancellationToken) => inner.CreateAsync(customer, cancellationToken);
         public Task<IReadOnlyList<Customer>> ListAsync(CancellationToken cancellationToken) => inner.ListAsync(cancellationToken);
+        public Guid? PersistedDeactivationVersion { get; private set; }
+
+        public async Task<bool> DeactivateAsync(Guid id, Guid expectedVersion, Guid newVersion, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref writes);
+            var persisted = await inner.DeactivateAsync(id, expectedVersion, newVersion, cancellationToken);
+            if (persisted)
+                PersistedDeactivationVersion = newVersion;
+            return persisted;
+        }
     }
 }

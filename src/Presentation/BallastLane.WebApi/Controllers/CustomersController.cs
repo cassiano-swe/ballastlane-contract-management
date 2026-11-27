@@ -1,4 +1,5 @@
 using BallastLane.Application.UseCases.Customers.CreateCustomer;
+using BallastLane.Application.UseCases.Customers.DeleteCustomer;
 using BallastLane.Application.UseCases.Customers.GetCustomerById;
 using BallastLane.Application.UseCases.Customers.ListCustomers;
 using BallastLane.Application.UseCases.Customers.UpdateCustomer;
@@ -6,6 +7,7 @@ using BallastLane.WebApi.Models.Requests.Customers;
 using BallastLane.WebApi.Models.Responses.Customers;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 namespace BallastLane.WebApi.Controllers;
 [ApiController]
 [Route("api/customers")]
@@ -14,10 +16,11 @@ public sealed class CustomersController(
     CreateCustomerHandler createHandler,
     ListCustomersHandler listHandler,
     GetCustomerByIdHandler getByIdHandler,
-    UpdateCustomerHandler updateHandler) : ControllerBase
+    UpdateCustomerHandler updateHandler,
+    DeleteCustomerHandler deleteHandler) : ControllerBase
 {
     /// <summary>Retrieves all registered customers.</summary>
-    /// <remarks>Returns all customers ordered by name and then ID. Anonymous access is temporary and is not intended for production.</remarks>
+    /// <remarks>Returns active and inactive customers ordered by name and then ID. Anonymous access is temporary and is not intended for production.</remarks>
     /// <response code="200">The customer array. When no customers are registered, the response body is [].</response>
     /// <response code="500">An unexpected error occurred. The response includes a request trace identifier.</response>
     [HttpGet]
@@ -27,11 +30,11 @@ public sealed class CustomersController(
     {
         var customers = await listHandler.HandleAsync(cancellationToken);
         return Ok(customers.Select(customer => new ListCustomersResponse(
-            customer.Id, customer.Name, customer.TradeName, customer.CustomerType, customer.TaxId, customer.Email, customer.Version)).ToArray());
+            customer.Id, customer.Name, customer.TradeName, customer.CustomerType, customer.TaxId, customer.Email, customer.Version, customer.Active)).ToArray());
     }
 
     /// <summary>Retrieves a customer by its unique identifier.</summary>
-    /// <remarks>Returns one customer. Anonymous access is temporary and is not intended for production.</remarks>
+    /// <remarks>Inactive customers remain retrievable. Anonymous access is temporary and is not intended for production.</remarks>
     /// <param name="id">The unique, non-empty customer UUID.</param>
     /// <param name="cancellationToken">The request cancellation token.</param>
     /// <response code="200">The requested customer.</response>
@@ -47,7 +50,7 @@ public sealed class CustomersController(
     {
         var customer = await getByIdHandler.HandleAsync(new(id), cancellationToken);
         return Ok(new GetCustomerByIdResponse(
-            customer.Id, customer.Name, customer.TradeName, customer.CustomerType, customer.TaxId, customer.Email, customer.Version));
+            customer.Id, customer.Name, customer.TradeName, customer.CustomerType, customer.TaxId, customer.Email, customer.Version, customer.Active));
     }
 
     /// <summary>Updates an existing customer using optimistic concurrency control.</summary>
@@ -76,8 +79,31 @@ public sealed class CustomersController(
             result.Id, result.Name, result.TradeName, result.CustomerType, result.TaxId, result.Email, result.Version));
     }
 
+    /// <summary>Deactivates an existing customer using soft delete and optimistic concurrency control.</summary>
+    /// <remarks>The database record is retained. The supplied token must match the persisted version. Deactivation generates a new version. An already inactive customer with a matching version succeeds without a write. A stale token returns 409, including after deactivation. Anonymous access is temporary and is not intended for production.</remarks>
+    /// <param name="id">The unique, non-empty customer UUID.</param>
+    /// <param name="version">The optimistic concurrency token obtained from a previous customer response.</param>
+    /// <param name="cancellationToken">The request cancellation token.</param>
+    /// <response code="204">The customer was deactivated or was already inactive with a matching version. The response has no body.</response>
+    /// <response code="400">The identifier or version is invalid, or the version is missing.</response>
+    /// <response code="404">No customer has the requested identifier.</response>
+    /// <response code="409">The customer version is stale. Retrieve the latest customer state before deciding whether to retry.</response>
+    /// <response code="500">An unexpected error occurred. The response includes a request trace identifier.</response>
+    [HttpDelete("{id}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status500InternalServerError, "application/problem+json")]
+    public async Task<IActionResult> Delete(
+        [FromRoute] Guid id, [FromQuery, BindRequired] Guid version, CancellationToken cancellationToken)
+    {
+        await deleteHandler.HandleAsync(new(id, version), cancellationToken);
+        return NoContent();
+    }
+
     /// <summary>Creates a customer.</summary>
-    /// <remarks>CustomerType must be the string Individual or Company. TradeName is allowed only for Company. Anonymous access is temporary and is not intended for production.</remarks>
+    /// <remarks>New customers are active by default. CustomerType must be the string Individual or Company. TradeName is allowed only for Company. Anonymous access is temporary and is not intended for production.</remarks>
     [HttpPost]
     [ProducesResponseType<CreateCustomerResponse>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]

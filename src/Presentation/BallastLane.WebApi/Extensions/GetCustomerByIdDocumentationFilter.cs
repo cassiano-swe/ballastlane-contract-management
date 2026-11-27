@@ -21,7 +21,8 @@ public sealed class GetCustomerByIdDocumentationFilter : IOperationFilter
             ["customerType"] = new OpenApiString("Company"),
             ["taxId"] = new OpenApiString("00123456789"),
             ["email"] = new OpenApiString("contact@acme.example"),
-            ["version"] = new OpenApiString(CustomerSchemaFilter.ExampleVersion)
+            ["version"] = new OpenApiString(CustomerSchemaFilter.ExampleVersion),
+            ["active"] = new OpenApiBoolean(false)
         };
     }
 }

@@ -17,7 +17,7 @@ public class CreateCustomerTests
         var result = await new CreateCustomerHandler(new(), repository).HandleAsync(Valid(), source.Token);
         Assert.NotEqual(Guid.Empty, result.Version);
         await repository.Received(1).CreateAsync(Arg.Is<Customer>(x => x.Id == result.Id && x.Name == "Acme"
-            && x.TaxId == "001" && x.TradeName == "Shop" && x.Version == result.Version), source.Token);
+            && x.TaxId == "001" && x.TradeName == "Shop" && x.Version == result.Version && x.Active), source.Token);
         Assert.Equal("a@example.com", result.Email);
     }
     [Theory]

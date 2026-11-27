@@ -1,5 +1,6 @@
 using System.Text;
 using BallastLane.Application.UseCases.Customers.CreateCustomer;
+using BallastLane.Application.UseCases.Customers.DeleteCustomer;
 using BallastLane.Application.UseCases.Customers.GetCustomerById;
 using BallastLane.Application.UseCases.Customers.ListCustomers;
 using BallastLane.Application.UseCases.Customers.UpdateCustomer;
@@ -57,6 +58,8 @@ builder.Services.AddScoped<GetCustomerByIdValidator>();
 builder.Services.AddScoped<GetCustomerByIdHandler>();
 builder.Services.AddScoped<UpdateCustomerValidator>();
 builder.Services.AddScoped<UpdateCustomerHandler>();
+builder.Services.AddScoped<DeleteCustomerValidator>();
+builder.Services.AddScoped<DeleteCustomerHandler>();
 builder.Services.AddProblemDetails();
 builder.Services.AddHealthChecks();
 builder.Services.AddInfrastructure(builder.Configuration);

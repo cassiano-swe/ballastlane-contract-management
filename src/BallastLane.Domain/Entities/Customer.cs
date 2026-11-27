@@ -13,17 +13,18 @@ public sealed class Customer
     public string TaxId { get; private set; }
     public string Email { get; private set; }
     public Guid Version { get; private set; }
+    public bool Active { get; private set; }
 
     public Customer(string? name, string? tradeName, CustomerType customerType, string? taxId, string? email)
         : this(Guid.NewGuid(), name?.Trim(), string.IsNullOrWhiteSpace(tradeName) ? null : tradeName.Trim(),
-            customerType, taxId?.Trim(), email?.Trim(), Guid.NewGuid())
+            customerType, taxId?.Trim(), email?.Trim(), Guid.NewGuid(), true)
     {
     }
 
-    public static Customer Reconstitute(Guid id, string name, string? tradeName, CustomerType customerType, string taxId, string email, Guid version)
-        => new(id, name, tradeName, customerType, taxId, email, version);
+    public static Customer Reconstitute(Guid id, string name, string? tradeName, CustomerType customerType, string taxId, string email, Guid version, bool active)
+        => new(id, name, tradeName, customerType, taxId, email, version, active);
 
-    private Customer(Guid id, string? name, string? tradeName, CustomerType customerType, string? taxId, string? email, Guid version)
+    private Customer(Guid id, string? name, string? tradeName, CustomerType customerType, string? taxId, string? email, Guid version, bool active)
     {
         if (id == Guid.Empty) throw new ArgumentException("Invalid customer identifier.", nameof(id));
         if (version == Guid.Empty) throw new ArgumentException("Invalid customer version.", nameof(version));
@@ -35,6 +36,7 @@ public sealed class Customer
         TaxId = taxId;
         Email = email;
         Version = version;
+        Active = active;
     }
 
     public void Update(string? name, string? tradeName, CustomerType customerType, string? taxId, string? email)
@@ -45,17 +47,31 @@ public sealed class Customer
         email = email?.Trim();
         Validate(name, tradeName, customerType, taxId, email);
 
+        Name = name;
+        TradeName = tradeName;
+        CustomerType = customerType;
+        TaxId = taxId;
+        Email = email;
+        RenewVersion();
+    }
+
+    public void Deactivate()
+    {
+        if (!Active)
+            return;
+
+        Active = false;
+        RenewVersion();
+    }
+
+    private void RenewVersion()
+    {
         Guid newVersion;
         do
         {
             newVersion = Guid.NewGuid();
         } while (newVersion == Guid.Empty || newVersion == Version);
 
-        Name = name;
-        TradeName = tradeName;
-        CustomerType = customerType;
-        TaxId = taxId;
-        Email = email;
         Version = newVersion;
     }
 
