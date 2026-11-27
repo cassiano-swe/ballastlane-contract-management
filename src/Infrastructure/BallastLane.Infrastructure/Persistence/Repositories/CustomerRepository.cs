@@ -7,6 +7,19 @@ using NpgsqlTypes;
 namespace BallastLane.Infrastructure.Persistence.Repositories;
 public sealed class CustomerRepository(NpgsqlDataSource dataSource) : ICustomerRepository
 {
+    public async Task<Customer?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
+    {
+        await using var command = dataSource.CreateCommand("""
+            SELECT id, name, trade_name, customer_type, tax_id, email
+            FROM customers
+            WHERE id = @id;
+            """);
+        command.Parameters.AddWithValue("id", NpgsqlDbType.Uuid, id);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        return await reader.ReadAsync(cancellationToken) ? MapCustomer(reader) : null;
+    }
+
     public async Task<IReadOnlyList<Customer>> ListAsync(CancellationToken cancellationToken)
     {
         await using var command = dataSource.CreateCommand("""
@@ -19,17 +32,20 @@ public sealed class CustomerRepository(NpgsqlDataSource dataSource) : ICustomerR
 
         while (await reader.ReadAsync(cancellationToken))
         {
-            customers.Add(Customer.Reconstitute(
-                reader.GetGuid(0),
-                reader.GetString(1),
-                reader.IsDBNull(2) ? null : reader.GetString(2),
-                (CustomerType)reader.GetInt16(3),
-                reader.GetString(4),
-                reader.GetString(5)));
+            customers.Add(MapCustomer(reader));
         }
 
         return customers;
     }
+
+    private static Customer MapCustomer(NpgsqlDataReader reader) =>
+        Customer.Reconstitute(
+            reader.GetGuid(0),
+            reader.GetString(1),
+            reader.IsDBNull(2) ? null : reader.GetString(2),
+            (CustomerType)reader.GetInt16(3),
+            reader.GetString(4),
+            reader.GetString(5));
 
     public async Task CreateAsync(Customer customer, CancellationToken cancellationToken)
     {

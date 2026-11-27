@@ -1,5 +1,6 @@
 using BallastLane.Application.Abstractions.Persistence;
 using BallastLane.Application.UseCases.Customers.CreateCustomer;
+using BallastLane.Application.UseCases.Customers.GetCustomerById;
 using BallastLane.Application.UseCases.Customers.ListCustomers;
 using BallastLane.Domain.Entities;
 using BallastLane.Domain.Enums;
@@ -22,7 +23,7 @@ public class CustomersControllerTests
         var customer = new Customer("Acme", "Shop", CustomerType.Company, "001", "a@example.com");
         IReadOnlyList<Customer> customers = populated ? [customer] : [];
         repository.ListAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(customers));
-        var controller = new CustomersController(new CreateCustomerHandler(new(), repository), new ListCustomersHandler(repository));
+        var controller = CreateController(repository);
         using var source = new CancellationTokenSource();
 
         var result = await controller.List(source.Token);
@@ -36,4 +37,25 @@ public class CustomersControllerTests
             Assert.Empty(response);
         await repository.Received(1).ListAsync(source.Token);
     }
+
+    [Fact]
+    public async Task GetByIdReturnsOkWithMappedCustomerAndPropagatesIdAndToken()
+    {
+        var repository = Substitute.For<ICustomerRepository>();
+        var id = Guid.NewGuid();
+        var customer = Customer.Reconstitute(id, "Acme", "Shop", CustomerType.Company, "001", "a@example.com");
+        using var source = new CancellationTokenSource();
+        repository.GetByIdAsync(id, source.Token).Returns(Task.FromResult<Customer?>(customer));
+
+        var result = await CreateController(repository).GetById(id, source.Token);
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        Assert.Equal(new GetCustomerByIdResponse(id, "Acme", "Shop", CustomerType.Company, "001", "a@example.com"),
+            Assert.IsType<GetCustomerByIdResponse>(ok.Value));
+        await repository.Received(1).GetByIdAsync(id, source.Token);
+    }
+
+    private static CustomersController CreateController(ICustomerRepository repository) =>
+        new(new CreateCustomerHandler(new(), repository), new ListCustomersHandler(repository),
+            new GetCustomerByIdHandler(new(), repository));
 }

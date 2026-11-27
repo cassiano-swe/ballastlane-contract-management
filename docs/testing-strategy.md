@@ -17,3 +17,11 @@ Customer integration tests use Testcontainers and apply the same versioned migra
 The domain, application, and controller tests were added before their respective implementations. The first builds failed on the missing reconstitution method, use case, and MVC action or response type. These compile failures establish that the tests referenced features not yet present. The HTTP integration run executed three tests before the GET action was added. Both HTTP requests returned 405, and Swagger lacked the GET operation. The final run passed all 53 unit tests and 15 integration tests.
 
 The listing integration tests exercise the real PostgreSQL query through the API, including an empty table, a single customer created by POST, and multiple rows inserted out of order. HTTP assertions cover identity and field preservation, nullable trade name, string customer types, ordering, public access, Swagger metadata, and the shared trace identifier in the 500 response and request log. A test-specific repository substitution triggers the unexpected failure.
+
+## GetCustomerById verification
+
+The first Application test build failed on the missing use case. The first controller test build failed on the missing action, response type, and constructor argument. A second Application build exposed an ambiguous validator call in the test, which was fixed before the passing run. Those compilation failures are distinct from behavioral failures.
+
+Before implementing the HTTP action and middleware mapping, all five new integration cases failed. Following the POST Location returned 404, both invalid identifiers and the substituted repository failure returned 404, and the OpenAPI operation was absent. The middleware test returned 500 instead of 404. After implementation, the focused run passed six Application cases, one middleware case, and five integration cases. The full solution run after refactoring passed 61 unit tests and 20 integration tests, including the controller mapping test and the POST and list regressions.
+
+The integration tests use the existing customers migration on disposable PostgreSQL 17. They verify direct lookup by ID, the null result for a missing row, anonymous HTTP retrieval, POST Location round-trip, validation errors, safe 404 and 500 responses, trace IDs in request logs, and the OpenAPI contract.
