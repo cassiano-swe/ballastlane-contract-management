@@ -31,14 +31,14 @@ graph LR
   Controller --> ResponseModel[Response model]
 ```
 
-`src` contains Domain and Application directly, Infrastructure and Presentation in their own directories. Each API owns its middleware; this small duplication avoids coupling the APIs or adding a shared project. Npgsql's singleton data source is the future ADO.NET entry point. No SQL or repository abstraction is needed by the example. Future SQL must be parameterized. JWT bearer validation requires an externally supplied issuer, audience and signing key, validates expiry, and does not issue tokens. The business API can start without JWT settings in Development for local testing; it cannot validate tokens in that mode, and authorization is not bypassed. In all other business API environments, and in the identity API, JWT settings are required. Swagger v1 is exposed in Development and includes a Bearer scheme.
+`src` contains Domain and Application directly, Infrastructure and Presentation in their own directories. Each API owns its middleware; this small duplication avoids coupling the APIs or adding a shared project. Npgsql's singleton data source is the ADO.NET entry point. Customer creation uses a focused repository abstraction and parameterized SQL. JWT bearer validation requires an externally supplied issuer, audience and signing key, validates expiry, and does not issue tokens. The business API can start without JWT settings in Development for local testing; it cannot validate tokens in that mode, and authorization is not bypassed. In all other business API environments, and in the identity API, JWT settings are required. Swagger v1 is exposed in Development and includes a Bearer scheme.
 
 ```mermaid
 graph LR
   Logging --> Exceptions --> Routing --> CORS --> Authentication --> Authorization --> Endpoints
 ```
 
-The APIs use HTTP; TLS termination is intended to be configured in Nginx later. Forwarded headers and trusted proxy settings will need to be configured when that proxy is introduced. Request logging wraps exception handling so it observes the resulting status. It uses structured logs, a trace scope and route templates rather than query strings or request bodies. Exception middleware converts the example's FluentValidation failure to 400 and unexpected exceptions to safe 500 ProblemDetails; it propagates client cancellation and exceptions after a response starts. Authentication and authorization handle their own failures. ProblemDetails includes a trace identifier shared with logs. Normal MVC validation uses framework ProblemDetails behavior.
+The APIs use HTTP; TLS termination is intended to be configured in Nginx later. Forwarded headers and trusted proxy settings will need to be configured when that proxy is introduced. Request logging wraps exception handling so it observes the resulting status. It uses structured logs, a trace scope and route templates rather than query strings or request bodies. Exception middleware converts the example's FluentValidation failure to 400 and unexpected exceptions to safe 500 ProblemDetails; it propagates client cancellation and exceptions after a response starts. Authentication and authorization handle their own failures. ProblemDetails includes a trace identifier shared with logs. MVC model binding and application validation use traceable ValidationProblemDetails.
 
 ```mermaid
 graph LR
@@ -47,3 +47,5 @@ graph LR
 ```
 
 The example is temporary and has no database dependency. See the development guide for removal.
+
+Customer creation uses a domain entity with six properties and a focused application handler and repository interface. Infrastructure performs a parameterized Npgsql insert; PostgreSQL's named unique constraint resolves concurrent duplicate tax IDs, which the API maps to 409. MVC and application validation return traceable ProblemDetails. The anonymous endpoint is temporary and must be secured before production. The resource URI in Location is reserved for a future GET operation.

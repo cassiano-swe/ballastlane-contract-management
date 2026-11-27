@@ -1,3 +1,5 @@
+using BallastLane.Application.Abstractions.Persistence;
+using BallastLane.Infrastructure.Persistence.Repositories;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -10,6 +12,7 @@ public static class DependencyInjection
     {
         services.AddSingleton(_ => NpgsqlDataSource.Create(configuration.GetConnectionString("Postgres")
             ?? throw new InvalidOperationException("ConnectionStrings:Postgres must be configured.")));
+        services.AddScoped<ICustomerRepository, CustomerRepository>();
         return services;
     }
 }

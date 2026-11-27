@@ -1,4 +1,6 @@
 using System.Text;
+using BallastLane.Application.UseCases.Customers.CreateCustomer;
+using Microsoft.AspNetCore.Mvc;
 using BallastLane.Infrastructure;
 using BallastLane.WebApi.Middleware;
 using BallastLane.WebApi.Extensions;
@@ -9,7 +11,24 @@ using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 string? issuer = null, audience = null, key = null;
-builder.Services.AddControllers();
+builder.Services.AddControllers().AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new CustomerTypeJsonConverter()));
+builder.Services.Configure<ApiBehaviorOptions>(options => options.InvalidModelStateResponseFactory = context =>
+{
+    var messages = context.ModelState.Where(entry => entry.Value?.Errors.Count > 0).Select(entry => entry.Key.ToLowerInvariant() switch
+    {
+        "name" or "$.name" => "Name is required and must be a string.",
+        "tradename" or "$.tradename" => "TradeName must be a string or null.",
+        "customertype" or "$.customertype" => "CustomerType is required and must be either Individual or Company as a string.",
+        "taxid" or "$.taxid" => "TaxId is required and must be a string.",
+        "email" or "$.email" => "Email is required and must be a string.",
+        _ => "The request body is missing or has an invalid format."
+    }).Distinct();
+    var problem = new ValidationProblemDetails(context.ModelState) { Type = "about:blank", Title = "Validation failed", Status = 400, Detail = string.Join(" ", messages), Instance = context.HttpContext.Request.Path };
+    problem.Extensions["traceId"] = context.HttpContext.TraceIdentifier;
+    return new BadRequestObjectResult(problem) { ContentTypes = { "application/problem+json" } };
+});
+builder.Services.AddScoped<CreateCustomerValidator>();
+builder.Services.AddScoped<CreateCustomerHandler>();
 builder.Services.AddProblemDetails();
 builder.Services.AddHealthChecks();
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -24,7 +43,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
 });
 builder.Services.AddAuthorization();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(options => { options.DocumentFilter<HealthDocumentationFilter>(); options.OperationFilter<AuthorizationDocumentationFilter>(); options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, $"{typeof(Program).Assembly.GetName().Name}.xml")); options.SwaggerDoc("v1", new OpenApiInfo { Title = "BallastLane Business API", Version = "v1" }); options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme { Type = SecuritySchemeType.Http, Scheme = "bearer", BearerFormat = "JWT" }); });
+builder.Services.AddSwaggerGen(options => { options.SchemaFilter<CustomerSchemaFilter>(); options.DocumentFilter<HealthDocumentationFilter>(); options.OperationFilter<AuthorizationDocumentationFilter>(); options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, $"{typeof(Program).Assembly.GetName().Name}.xml")); options.SwaggerDoc("v1", new OpenApiInfo { Title = "BallastLane Business API", Version = "v1" }); options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme { Type = SecuritySchemeType.Http, Scheme = "bearer", BearerFormat = "JWT" }); });
 var app = builder.Build();
 var jwt = app.Configuration.GetSection("Jwt");
 issuer = jwt["Issuer"];

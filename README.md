@@ -1,8 +1,8 @@
 # BallastLane
 
-BallastLane is an architectural scaffold for a contract-management interview exercise. Customer, Contract, and user management are not implemented. The temporary percentage example is not a business requirement. The separate Generative AI Tools assignment is out of scope.
+BallastLane is a contract-management interview exercise. Customer creation is implemented; Contract and user management are not implemented. The temporary percentage example is not a business requirement. The separate Generative AI Tools assignment is out of scope.
 
-The solution uses .NET 10, ASP.NET Core MVC API controllers, FluentValidation, Npgsql/ADO.NET, JWT bearer validation, Swagger, Angular standalone components and routing, PostgreSQL, and Docker Compose. See [architecture](docs/architecture.md), [development guide](docs/development-guide.md), and [testing strategy](docs/testing-strategy.md).
+The solution uses .NET 10, ASP.NET Core MVC API controllers, FluentValidation, Npgsql/ADO.NET, JWT bearer validation, Swagger, Angular standalone components and routing, PostgreSQL, and Docker Compose. See [customer business rules](docs/customer-business-rules.md), [architecture](docs/architecture.md), [development guide](docs/development-guide.md), and [testing strategy](docs/testing-strategy.md).
 
 ## Layout
 
@@ -10,7 +10,7 @@ The solution uses .NET 10, ASP.NET Core MVC API controllers, FluentValidation, N
 
 ## Prerequisites and configuration
 
-Install .NET 10 SDK, Node.js 22 and npm, Docker and Docker Compose. Copy `.env.example` to `.env` and replace the password. Compose automatically loads `.env` from the project directory; values exported in the shell also work. A host-run .NET process does **not** automatically load this file. Supply its configuration separately through environment variables or .NET user secrets. The business API can run in Development without JWT settings for local testing. Its current endpoints are public; without JWT settings it cannot validate tokens, so protected endpoints still require authentication. The identity API and the business API outside Development require JWT settings. When configuring JWT, provide:
+Install .NET 10 SDK, Node.js 22 and npm, Docker and Docker Compose. Copy `.env.example` to `.env` and replace the database password and JWT signing key with your own local secrets (the JWT signing key must contain at least 32 UTF-8 bytes). Compose automatically loads `.env` from the project directory; values exported in the shell also work. A host-run .NET process does **not** automatically load this file. Supply its configuration separately through environment variables or .NET user secrets. The business API can run in Development without JWT settings for local testing. Its current endpoints are public; without JWT settings it cannot validate tokens, so protected endpoints still require authentication. The identity API and the business API outside Development require JWT settings. When configuring JWT, provide:
 
 ```sh
 export Jwt__Issuer='local-issuer'
@@ -21,10 +21,22 @@ export ConnectionStrings__Postgres='Host=localhost;Port=5432;Database=ballastlan
 
 When both APIs validate tokens, they must use the same issuer, audience and signing key. No token issuer is included. Origins can be supplied through configuration such as `Cors__Origins__0=http://localhost:4200`. Never commit real secrets. The business API rejects partial or invalid JWT settings, and outside Development also rejects missing settings. The identity API always requires valid JWT settings. The data source is created lazily on first use.
 
-## Run locally
+## Run with Docker Compose
 
 ```sh
-docker compose up -d
+docker compose up -d --build
+docker compose ps
+```
+
+The web application is served at `http://localhost:4200`. Its `/business-api/` and `/identity-api/` paths are proxied to the `api` and `identity-api` services on port 8080. The business and identity APIs are also available directly at `http://localhost:5101` and `http://localhost:5102`, respectively. Both APIs use `postgres:5432` inside the Compose network, and use the same JWT settings from `.env`. Compose defaults to Development so the Swagger UIs are available; `ASPNETCORE_ENVIRONMENT` can override this. PostgreSQL and API ports bind only to localhost. The database migration is a separate manual step described below; starting Compose does not apply it.
+
+For the connection string assembled by Compose, avoid semicolons in database values or use a suitably escaped Npgsql connection string configuration. Compose's JWT signing key is only local configuration; it does not issue tokens.
+
+## Run applications on the host
+
+Start only the database with `docker compose up -d postgres`, then use separate terminals for the following commands:
+
+```sh
 dotnet restore BallastLane.sln
 dotnet build BallastLane.sln
 dotnet test BallastLane.sln
@@ -41,4 +53,24 @@ Run long-lived commands in separate terminals. The business API is at `http://lo
 
 Built-in logging is configured in each API's appsettings files and can be overridden with environment variables, e.g. `Logging__LogLevel__Default`. Request completion logs contain a route template, status, elapsed time and trace identifier, but no bodies, query strings or authorization data. Handled errors return `application/problem+json` with a trace identifier and generic unexpected-error details. Request cancellation is propagated.
 
-There are no production endpoints, database tables, migration runner, authentication workflows, or issued tokens. The health checks indicate API process health, not database readiness. Production frontend API paths are deployment placeholders. Docker/Testcontainers requires a working Docker daemon. Future migration scripts must be reviewed and executed through a separately chosen deployment process.
+There is no migration runner, authentication workflow, or token issuer. The health checks indicate API process health, not database readiness. The containerized frontend uses Nginx to route its API paths to the Compose services. Docker/Testcontainers requires a working Docker daemon. Future migration scripts must be reviewed and executed through a separately chosen deployment process.
+
+## Customer creation
+
+`POST /api/customers` creates an Individual or Company. This endpoint is temporarily anonymous and is not intended for production deployment. It returns `201 Created` with a `Location: /api/customers/{id}` header; the corresponding GET endpoint does not exist yet.
+
+```json
+{"name":"Acme Corporation","tradeName":"Acme","customerType":"Company","taxId":"00123456789","email":"contact@acme.example"}
+```
+
+The response contains `id`, `name`, `tradeName`, `customerType`, `taxId`, and `email`. Text is trimmed. Name is required (maximum 200 characters); trade name is optional (maximum 200, Company only); tax ID is required (maximum 50, preserved as a string); email is required and valid (maximum 254). Tax IDs are unique with exact database comparison; no country-specific normalization is applied. Invalid requests return 400; a duplicate tax ID returns 409; unexpected failures return 500. Errors are ProblemDetails with a trace ID; validation failures explain their cause in `detail` and provide field-level messages in `errors`.
+
+The PostgreSQL schema is defined by `database/migrations/001_create_customers.sql`. Configure the local Compose environment as described above, start PostgreSQL, inspect existing tables, then apply once:
+
+```sh
+docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" < database/migrations/001_create_customers.sql
+```
+
+The shell variables must contain the configured Compose database user and database name. Verify with `\d customers` in psql. The migration creates the six customer columns, a primary key, a unique tax ID constraint, and checks for customer type, trade name and required text. It does not modify an existing table. PostgreSQL resolves concurrent duplicates atomically.
+
+In Development, Swagger UI is available at `/swagger`; the JSON document is at `/swagger/v1/swagger.json`. Run `dotnet test BallastLane.sln` for unit and integration tests; Docker is required for isolated PostgreSQL integration tests. No customer retrieval, modification, deletion, or authentication workflow is included.
