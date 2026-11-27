@@ -27,7 +27,7 @@ public class DeleteCustomerTests
         using var logs = new TestLogProvider();
         await using var factory = Factory(database.GetConnectionString(), configure: builder =>
             builder.ConfigureLogging(logging => logging.AddProvider(logs)));
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAuthenticatedClient();
         var (path, created) = await CreateAsync(client, "001");
         var active = await ReadAsync(client, path);
         CustomerJsonAssertions.MatchesWriteResponse(created, active, active: true);
@@ -95,7 +95,7 @@ public class DeleteCustomerTests
         await CustomerMigrations.ApplyAllAsync(source);
         var repository = new RacingRepository(new CustomerRepository(source));
         await using var factory = Factory(database.GetConnectionString(), repository);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAuthenticatedClient();
         var (path, created) = await CreateAsync(client, "001");
         var version = Version(created);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
@@ -142,7 +142,7 @@ public class DeleteCustomerTests
         using var logs = new TestLogProvider();
         await using var factory = Factory(repository: new FailingRepository(), configure: builder =>
             builder.ConfigureLogging(logging => logging.AddProvider(logs)));
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAuthenticatedClient();
         var id = scenario switch
         {
             "malformed-id" => "invalid",
@@ -175,8 +175,8 @@ public class DeleteCustomerTests
         void AddLogging(IWebHostBuilder builder) => builder.ConfigureLogging(logging => logging.AddProvider(logs));
         await using var factory = Factory(database.GetConnectionString(), configure: AddLogging);
         await using var failing = Factory(repository: new FailingRepository(), configure: AddLogging);
-        using var client = factory.CreateClient();
-        using var failingClient = failing.CreateClient();
+        using var client = factory.CreateAuthenticatedClient();
+        using var failingClient = failing.CreateAuthenticatedClient();
         var path = $"/api/customers/{Guid.NewGuid()}";
         var url = DeleteUrl(path, Guid.NewGuid());
 
@@ -188,16 +188,16 @@ public class DeleteCustomerTests
     }
 
     [Fact]
-    public async Task SwaggerDocumentsAnonymousDeleteAndActivationInGetSchemas()
+    public async Task SwaggerDocumentsProtectedDeleteAndActivationInGetSchemas()
     {
         await using var factory = Factory();
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAuthenticatedClient();
         using var ui = await client.GetAsync("/swagger/index.html");
         Assert.Equal(HttpStatusCode.OK, ui.StatusCode);
         var swagger = await ReadAsync(client, "/swagger/v1/swagger.json");
         var operation = swagger.GetProperty("paths").GetProperty("/api/customers/{id}").GetProperty("delete");
         Assert.Equal("Deactivates an existing customer using soft delete and optimistic concurrency control.", operation.GetProperty("summary").GetString());
-        Assert.False(operation.TryGetProperty("security", out _));
+        Assert.True(Assert.Single(operation.GetProperty("security").EnumerateArray()).TryGetProperty("Bearer", out _));
         Assert.False(operation.TryGetProperty("requestBody", out _));
         var parameters = operation.GetProperty("parameters").EnumerateArray().ToDictionary(item => item.GetProperty("name").GetString()!);
         Assert.Equal(2, parameters.Count);
@@ -209,7 +209,7 @@ public class DeleteCustomerTests
             Assert.Equal("uuid", parameter.GetProperty("schema").GetProperty("format").GetString());
         }
         var responses = operation.GetProperty("responses");
-        Assert.Equal(new[] { "204", "400", "404", "409", "500" }, responses.EnumerateObject().Select(item => item.Name).Order().ToArray());
+        Assert.Equal(new[] { "204", "400", "401", "404", "409", "500" }, responses.EnumerateObject().Select(item => item.Name).Order().ToArray());
         Assert.False(responses.GetProperty("204").TryGetProperty("content", out _));
 
         var schemas = swagger.GetProperty("components").GetProperty("schemas");

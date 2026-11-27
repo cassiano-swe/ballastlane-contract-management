@@ -31,7 +31,7 @@ public class UpdateCustomerTests
         using var logs = new TestLogProvider();
         await using var factory = Factory(database.GetConnectionString(), configure: builder =>
             builder.ConfigureLogging(logging => logging.AddProvider(logs)));
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAuthenticatedClient();
         var (path, created) = await CreateAsync(client, "001");
         await CreateAsync(client, "002");
         var initial = await ReadAsync(client, path);
@@ -91,7 +91,7 @@ public class UpdateCustomerTests
         await CustomerMigrations.ApplyAllAsync(source);
         var repository = new RacingRepository(new CustomerRepository(source));
         await using var factory = Factory(database.GetConnectionString(), repository);
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAuthenticatedClient();
         var (path, created) = await CreateAsync(client, "001");
         var version = Version(created);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
@@ -129,7 +129,7 @@ public class UpdateCustomerTests
     public async Task InvalidInputReturnsTraceableValidationProblem(string scenario)
     {
         await using var factory = Factory(repository: new FailingRepository());
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAuthenticatedClient();
         var id = scenario switch
         {
             "invalid-id" => "malformed-id",
@@ -157,12 +157,12 @@ public class UpdateCustomerTests
     }
 
     [Fact]
-    public async Task UnexpectedFailureIsSafeAndSwaggerDescribesAnonymousPut()
+    public async Task UnexpectedFailureIsSafeAndSwaggerDescribesProtectedPut()
     {
         using var logs = new TestLogProvider();
         await using var factory = Factory(repository: new FailingRepository(), configure: builder =>
             builder.ConfigureLogging(logging => logging.AddProvider(logs)));
-        using var client = factory.CreateClient();
+        using var client = factory.CreateAuthenticatedClient();
         var path = $"/api/customers/{Guid.NewGuid()}";
         using var response = await client.PutAsJsonAsync(path, Body("New", "001", Guid.NewGuid()));
         var problem = await ProblemAsync(response, HttpStatusCode.InternalServerError, path);
@@ -175,12 +175,12 @@ public class UpdateCustomerTests
         var swagger = await ReadAsync(client, "/swagger/v1/swagger.json");
         var operation = swagger.GetProperty("paths").GetProperty("/api/customers/{id}").GetProperty("put");
         Assert.Equal("Updates an existing customer using optimistic concurrency control.", operation.GetProperty("summary").GetString());
-        Assert.False(operation.TryGetProperty("security", out _));
+        Assert.True(Assert.Single(operation.GetProperty("security").EnumerateArray()).TryGetProperty("Bearer", out _));
         var id = Assert.Single(operation.GetProperty("parameters").EnumerateArray());
         Assert.True(id.GetProperty("required").GetBoolean());
         Assert.Equal("uuid", id.GetProperty("schema").GetProperty("format").GetString());
         var responses = operation.GetProperty("responses");
-        Assert.Equal(new[] { "200", "400", "404", "409", "500" }, responses.EnumerateObject().Select(item => item.Name).Order().ToArray());
+        Assert.Equal(new[] { "200", "400", "401", "404", "409", "500" }, responses.EnumerateObject().Select(item => item.Name).Order().ToArray());
         var examples = responses.GetProperty("409").GetProperty("content").GetProperty("application/problem+json").GetProperty("examples");
         Assert.Equal("urn:ballastlane:customer-concurrency-conflict", examples.GetProperty("concurrency").GetProperty("value").GetProperty("type").GetString());
         Assert.Equal("urn:ballastlane:customer-duplicate-tax-id", examples.GetProperty("duplicateTaxId").GetProperty("value").GetProperty("type").GetString());
@@ -211,7 +211,7 @@ public class UpdateCustomerTests
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:Postgres"] = connectionString ?? "Host=localhost;Database=unused;Username=unused",
-                ["Jwt:Issuer"] = "", ["Jwt:Audience"] = "", ["Jwt:SigningKey"] = ""
+                ["Jwt:Issuer"] = TestJwt.Issuer, ["Jwt:Audience"] = TestJwt.Audience, ["Jwt:SigningKey"] = TestJwt.SigningKey
             }));
             if (repository is not null)
                 builder.ConfigureServices(services => services.RemoveAll<ICustomerRepository>().AddSingleton(repository));

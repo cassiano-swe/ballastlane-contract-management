@@ -5,13 +5,11 @@ using BallastLane.Application.UseCases.Customers.ListCustomers;
 using BallastLane.Application.UseCases.Customers.UpdateCustomer;
 using BallastLane.WebApi.Models.Requests.Customers;
 using BallastLane.WebApi.Models.Responses.Customers;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 namespace BallastLane.WebApi.Controllers;
 [ApiController]
 [Route("api/customers")]
-[AllowAnonymous]
 public sealed class CustomersController(
     CreateCustomerHandler createHandler,
     ListCustomersHandler listHandler,
@@ -20,7 +18,7 @@ public sealed class CustomersController(
     DeleteCustomerHandler deleteHandler) : ControllerBase
 {
     /// <summary>Retrieves all registered customers.</summary>
-    /// <remarks>Returns active and inactive customers ordered by name and then ID. Anonymous access is temporary and is not intended for production.</remarks>
+    /// <remarks>Returns active and inactive customers ordered by name and then ID.</remarks>
     /// <response code="200">The customer array. When no customers are registered, the response body is [].</response>
     /// <response code="500">An unexpected error occurred. The response includes a request trace identifier.</response>
     [HttpGet]
@@ -34,7 +32,7 @@ public sealed class CustomersController(
     }
 
     /// <summary>Retrieves a customer by its unique identifier.</summary>
-    /// <remarks>Inactive customers remain retrievable. Anonymous access is temporary and is not intended for production.</remarks>
+    /// <remarks>Inactive customers remain retrievable.</remarks>
     /// <param name="id">The unique, non-empty customer UUID.</param>
     /// <param name="cancellationToken">The request cancellation token.</param>
     /// <response code="200">The requested customer.</response>
@@ -54,7 +52,7 @@ public sealed class CustomersController(
     }
 
     /// <summary>Updates an existing customer using optimistic concurrency control.</summary>
-    /// <remarks>Replaces all editable values. An omitted trade name clears it. Each successful update generates a new version, even when values are unchanged. On a concurrency conflict, retrieve the latest customer before deciding whether to submit another update. Anonymous access is temporary and is not intended for production.</remarks>
+    /// <remarks>Replaces all editable values. An omitted trade name clears it. Each successful update generates a new version, even when values are unchanged. On a concurrency conflict, retrieve the latest customer before deciding whether to submit another update.</remarks>
     /// <param name="id">The unique, non-empty customer UUID.</param>
     /// <param name="request">The replacement values and expected customer version.</param>
     /// <param name="cancellationToken">The request cancellation token.</param>
@@ -80,7 +78,7 @@ public sealed class CustomersController(
     }
 
     /// <summary>Deactivates an existing customer using soft delete and optimistic concurrency control.</summary>
-    /// <remarks>The database record is retained. The supplied token must match the persisted version. Deactivation generates a new version. An already inactive customer with a matching version succeeds without a write. A stale token returns 409, including after deactivation. Anonymous access is temporary and is not intended for production.</remarks>
+    /// <remarks>The database record is retained. The supplied token must match the persisted version. Deactivation generates a new version. An already inactive customer with a matching version succeeds without a write. A stale token returns 409, including after deactivation.</remarks>
     /// <param name="id">The unique, non-empty customer UUID.</param>
     /// <param name="version">The optimistic concurrency token obtained from a previous customer response.</param>
     /// <param name="cancellationToken">The request cancellation token.</param>
@@ -103,7 +101,7 @@ public sealed class CustomersController(
     }
 
     /// <summary>Creates a customer.</summary>
-    /// <remarks>New customers are active by default. CustomerType must be the string Individual or Company. TradeName is allowed only for Company. Anonymous access is temporary and is not intended for production.</remarks>
+    /// <remarks>New customers are active by default. CustomerType must be the string Individual or Company. TradeName is allowed only for Company.</remarks>
     [HttpPost]
     [ProducesResponseType<CreateCustomerResponse>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]

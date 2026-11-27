@@ -37,7 +37,7 @@ public class GetCustomerByIdTests
         using var logs = new TestLogProvider();
         await using var app = Factory(connectionString).WithWebHostBuilder(builder =>
             builder.ConfigureLogging(logging => logging.AddProvider(logs)));
-        using var client = app.CreateClient();
+        using var client = app.CreateAuthenticatedClient();
 
         using var created = await client.PostAsJsonAsync("/api/customers",
             new { name = "Acme", tradeName = "Shop", customerType = "Company", taxId = "002", email = "a@example.com" });
@@ -92,7 +92,7 @@ public class GetCustomerByIdTests
         await using var app = Factory().WithWebHostBuilder(builder =>
             builder.ConfigureServices(services => services.RemoveAll<ICustomerRepository>()
                 .AddScoped<ICustomerRepository, FailingRepository>()));
-        using var client = app.CreateClient();
+        using var client = app.CreateAuthenticatedClient();
         using var response = await client.GetAsync($"/api/customers/{id}");
         var problem = await ReadProblem(response, HttpStatusCode.BadRequest, $"/api/customers/{id}");
         Assert.Equal(message, problem.GetProperty("detail").GetString());
@@ -111,7 +111,7 @@ public class GetCustomerByIdTests
             builder.ConfigureServices(services => services.RemoveAll<ICustomerRepository>()
                 .AddScoped<ICustomerRepository, FailingRepository>());
         });
-        using var client = app.CreateClient();
+        using var client = app.CreateAuthenticatedClient();
         var path = $"/api/customers/{Guid.NewGuid()}";
         using var response = await client.GetAsync(path);
         var problem = await ReadProblem(response, HttpStatusCode.InternalServerError, path);
@@ -121,18 +121,18 @@ public class GetCustomerByIdTests
     }
 
     [Fact]
-    public async Task SwaggerDocumentsTheAnonymousByIdOperation()
+    public async Task SwaggerDocumentsTheProtectedByIdOperation()
     {
         await using var app = Factory();
-        using var client = app.CreateClient();
+        using var client = app.CreateAuthenticatedClient();
         using var swagger = JsonDocument.Parse(await client.GetStringAsync("/swagger/v1/swagger.json"));
         var paths = swagger.RootElement.GetProperty("paths");
         Assert.True(paths.GetProperty("/api/customers").TryGetProperty("post", out _));
         Assert.True(paths.GetProperty("/api/customers").TryGetProperty("get", out _));
         var operation = paths.GetProperty("/api/customers/{id}").GetProperty("get");
         Assert.Equal("Retrieves a customer by its unique identifier.", operation.GetProperty("summary").GetString());
-        Assert.Contains("Anonymous access is temporary", operation.GetProperty("description").GetString());
-        Assert.False(operation.TryGetProperty("security", out _));
+        Assert.Contains("Inactive customers remain retrievable", operation.GetProperty("description").GetString());
+        Assert.True(Assert.Single(operation.GetProperty("security").EnumerateArray()).TryGetProperty("Bearer", out _));
         Assert.False(operation.TryGetProperty("requestBody", out _));
         var parameter = Assert.Single(operation.GetProperty("parameters").EnumerateArray());
         Assert.Equal("id", parameter.GetProperty("name").GetString());
@@ -167,9 +167,9 @@ public class GetCustomerByIdTests
             builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:Postgres"] = connectionString,
-                ["Jwt:Issuer"] = "",
-                ["Jwt:Audience"] = "",
-                ["Jwt:SigningKey"] = ""
+                ["Jwt:Issuer"] = TestJwt.Issuer,
+                ["Jwt:Audience"] = TestJwt.Audience,
+                ["Jwt:SigningKey"] = TestJwt.SigningKey
             }));
         });
 

@@ -12,6 +12,8 @@ Apply `003_add_customer_active.sql` to the local development database before sta
 
 Apply `004_create_users.sql` after verifying the existing local schema and migration sequence. Verify the user column types, length limits, required fields, true active default and named constraints. Compare Customer data before and after the first application without exporting customer records. Use synthetic hashes for persistence tests and keep Npgsql parameter logging disabled for this data source.
 
+Provision the demo account manually using the seed under `database/seeds` on verified local development PostgreSQL. The credential is public. A repeat preserves the existing account, so investigate a failed demo login without resetting an existing user's hash or activation. Both APIs require the matching JWT settings described in the README. Keep credentials, hashes and tokens out of logs and use isolated keys in tests.
+
 Add Angular feature folders under `src/app/features`, shared UI under `shared`, cross-cutting services under `core`, and layout components under `layouts`. Configure API URLs for each deployment. Do not embed secrets in frontend files.
 
 To remove the temporary demonstration, delete Domain/Examples/Percentage.cs, Application/UseCases/Examples, ExampleController, its request and response models, the handler and validator registrations in the business API composition root, and the example-specific tests and documentation. Keep the middleware and infrastructure configuration. Check Swagger and rerun the suite afterward.

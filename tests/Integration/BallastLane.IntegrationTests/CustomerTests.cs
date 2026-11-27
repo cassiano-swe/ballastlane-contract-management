@@ -19,9 +19,9 @@ public class CustomerTests
         await CustomerMigrations.ApplyAllAsync(ds);
         await using var app = new WebApplicationFactory<business::Program>().WithWebHostBuilder(builder => {
             builder.UseEnvironment("Development");
-            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:Postgres"] = database.GetConnectionString(), ["Jwt:Issuer"] = "", ["Jwt:Audience"] = "", ["Jwt:SigningKey"] = "" }));
+            builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:Postgres"] = database.GetConnectionString(), ["Jwt:Issuer"] = TestJwt.Issuer, ["Jwt:Audience"] = TestJwt.Audience, ["Jwt:SigningKey"] = TestJwt.SigningKey }));
         });
-        var client = app.CreateClient();
+        var client = app.CreateAuthenticatedClient();
         var body = new { name = " Acme ", tradeName = " Shop ", customerType = "Company", taxId = "001'23", email = "contact@acme.example" };
         var responses = await Task.WhenAll(client.PostAsJsonAsync("/api/customers", body), client.PostAsJsonAsync("/api/customers", body));
         Assert.Single(responses, r => r.StatusCode == HttpStatusCode.Created);
@@ -44,7 +44,7 @@ public class CustomerTests
         }
         var swagger = JsonDocument.Parse(await client.GetStringAsync("/swagger/v1/swagger.json")).RootElement;
         var operation = swagger.GetProperty("paths").GetProperty("/api/customers").GetProperty("post");
-        Assert.False(operation.TryGetProperty("security", out _));
+        Assert.True(Assert.Single(operation.GetProperty("security").EnumerateArray()).TryGetProperty("Bearer", out _));
         var requestSchema = swagger.GetProperty("components").GetProperty("schemas").GetProperty("CreateCustomerRequest");
         Assert.False(requestSchema.GetProperty("properties").TryGetProperty("version", out _));
         var versionSchema = swagger.GetProperty("components").GetProperty("schemas").GetProperty("CreateCustomerResponse")

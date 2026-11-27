@@ -28,6 +28,7 @@ services:
       Jwt__Issuer: ${JWT_ISSUER:?Set JWT_ISSUER}
       Jwt__Audience: ${JWT_AUDIENCE:?Set JWT_AUDIENCE}
       Jwt__SigningKey: ${JWT_SIGNING_KEY:?Set JWT_SIGNING_KEY}
+      Jwt__AccessTokenLifetimeSeconds: ${JWT_ACCESS_TOKEN_LIFETIME_SECONDS:-1800}
       Cors__Origins__0: http://localhost:4200
     ports:
       - "127.0.0.1:5101:8080"
