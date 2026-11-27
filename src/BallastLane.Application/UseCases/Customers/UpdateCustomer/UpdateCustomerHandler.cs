@@ -6,8 +6,9 @@ namespace BallastLane.Application.UseCases.Customers.UpdateCustomer;
 
 public sealed class UpdateCustomerHandler(UpdateCustomerValidator validator, ICustomerRepository repository)
 {
-    public async Task<UpdateCustomerOutput> HandleAsync(UpdateCustomerInput input, CancellationToken cancellationToken)
+    public async Task<UpdateCustomerOutput> HandleAsync(UpdateCustomerInput input, Guid authorId, CancellationToken cancellationToken)
     {
+        ArgumentOutOfRangeException.ThrowIfEqual(authorId, Guid.Empty);
         var normalized = input with
         {
             Name = input.Name?.Trim(),
@@ -24,7 +25,7 @@ public sealed class UpdateCustomerHandler(UpdateCustomerValidator validator, ICu
             throw new CustomerConcurrencyException();
 
         customer.Update(normalized.Name, normalized.TradeName, normalized.CustomerType, normalized.TaxId, normalized.Email);
-        if (!await repository.UpdateAsync(customer, expectedVersion, cancellationToken))
+        if (!await repository.UpdateAsync(customer, expectedVersion, authorId, cancellationToken))
         {
             if (await repository.GetByIdAsync(input.Id, cancellationToken) is null)
                 throw new CustomerNotFoundException();

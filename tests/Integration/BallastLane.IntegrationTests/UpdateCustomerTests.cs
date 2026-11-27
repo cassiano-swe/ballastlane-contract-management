@@ -28,6 +28,7 @@ public class UpdateCustomerTests
         await database.StartAsync();
         await using var source = NpgsqlDataSource.Create(database.GetConnectionString());
         await CustomerMigrations.ApplyAllAsync(source);
+        await TestJwt.SeedAuthorAsync(source);
         using var logs = new TestLogProvider();
         await using var factory = Factory(database.GetConnectionString(), configure: builder =>
             builder.ConfigureLogging(logging => logging.AddProvider(logs)));
@@ -89,6 +90,7 @@ public class UpdateCustomerTests
         await database.StartAsync();
         await using var source = NpgsqlDataSource.Create(database.GetConnectionString());
         await CustomerMigrations.ApplyAllAsync(source);
+        await TestJwt.SeedAuthorAsync(source);
         var repository = new RacingRepository(new CustomerRepository(source));
         await using var factory = Factory(database.GetConnectionString(), repository);
         using var client = factory.CreateAuthenticatedClient();
@@ -248,11 +250,11 @@ public class UpdateCustomerTests
 
     internal sealed class FailingRepository : ICustomerRepository
     {
-        public Task<bool> DeactivateAsync(Guid id, Guid expectedVersion, Guid newVersion, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<bool> DeactivateAsync(Guid id, Guid expectedVersion, Guid newVersion, Guid authorId, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<Customer?> GetByIdAsync(Guid id, CancellationToken cancellationToken) => throw new InvalidOperationException("sensitive-repository-detail");
-        public Task CreateAsync(Customer customer, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task CreateAsync(Customer customer, Guid authorId, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<IReadOnlyList<Customer>> ListAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task<bool> UpdateAsync(Customer customer, Guid expectedVersion, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<bool> UpdateAsync(Customer customer, Guid expectedVersion, Guid authorId, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     internal sealed class RacingRepository(CustomerRepository inner) : ICustomerRepository
@@ -280,20 +282,20 @@ public class UpdateCustomerTests
             return customer;
         }
 
-        public Task<bool> UpdateAsync(Customer customer, Guid expectedVersion, CancellationToken cancellationToken)
+        public Task<bool> UpdateAsync(Customer customer, Guid expectedVersion, Guid authorId, CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref writes);
-            return inner.UpdateAsync(customer, expectedVersion, cancellationToken);
+            return inner.UpdateAsync(customer, expectedVersion, authorId, cancellationToken);
         }
 
-        public Task CreateAsync(Customer customer, CancellationToken cancellationToken) => inner.CreateAsync(customer, cancellationToken);
+        public Task CreateAsync(Customer customer, Guid authorId, CancellationToken cancellationToken) => inner.CreateAsync(customer, authorId, cancellationToken);
         public Task<IReadOnlyList<Customer>> ListAsync(CancellationToken cancellationToken) => inner.ListAsync(cancellationToken);
         public Guid? PersistedDeactivationVersion { get; private set; }
 
-        public async Task<bool> DeactivateAsync(Guid id, Guid expectedVersion, Guid newVersion, CancellationToken cancellationToken)
+        public async Task<bool> DeactivateAsync(Guid id, Guid expectedVersion, Guid newVersion, Guid authorId, CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref writes);
-            var persisted = await inner.DeactivateAsync(id, expectedVersion, newVersion, cancellationToken);
+            var persisted = await inner.DeactivateAsync(id, expectedVersion, newVersion, authorId, cancellationToken);
             if (persisted)
                 PersistedDeactivationVersion = newVersion;
             return persisted;

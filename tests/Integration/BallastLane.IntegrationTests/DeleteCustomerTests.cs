@@ -24,6 +24,7 @@ public class DeleteCustomerTests
         await database.StartAsync();
         await using var source = NpgsqlDataSource.Create(database.GetConnectionString());
         await CustomerMigrations.ApplyAllAsync(source);
+        await TestJwt.SeedAuthorAsync(source);
         using var logs = new TestLogProvider();
         await using var factory = Factory(database.GetConnectionString(), configure: builder =>
             builder.ConfigureLogging(logging => logging.AddProvider(logs)));
@@ -93,6 +94,7 @@ public class DeleteCustomerTests
         await database.StartAsync();
         await using var source = NpgsqlDataSource.Create(database.GetConnectionString());
         await CustomerMigrations.ApplyAllAsync(source);
+        await TestJwt.SeedAuthorAsync(source);
         var repository = new RacingRepository(new CustomerRepository(source));
         await using var factory = Factory(database.GetConnectionString(), repository);
         using var client = factory.CreateAuthenticatedClient();
@@ -171,6 +173,7 @@ public class DeleteCustomerTests
         await database.StartAsync();
         await using var source = NpgsqlDataSource.Create(database.GetConnectionString());
         await CustomerMigrations.ApplyAllAsync(source);
+        await TestJwt.SeedAuthorAsync(source);
         using var logs = new TestLogProvider();
         void AddLogging(IWebHostBuilder builder) => builder.ConfigureLogging(logging => logging.AddProvider(logs));
         await using var factory = Factory(database.GetConnectionString(), configure: AddLogging);

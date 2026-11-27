@@ -72,13 +72,14 @@ The response adds the generated `id` and `version` to the customer fields. New c
 
 ## Database migrations
 
-Inspect the healthy local Compose PostgreSQL service before applying migrations. On a fresh database, apply all four scripts in order. On an existing database, inspect the schema and apply only pending scripts.
+Inspect the healthy local Compose PostgreSQL service before applying migrations. On a fresh database, apply all five scripts in order. On an existing database, inspect the schema and apply only pending scripts.
 
 ```sh
 docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < database/migrations/001_create_customers.sql
 docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < database/migrations/002_add_customer_version.sql
 docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < database/migrations/003_add_customer_active.sql
 docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < database/migrations/004_create_users.sql
+docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < database/migrations/005_add_customer_authorship.sql
 ```
 
 The second migration adds the seventh customer column and backfills a distinct UUID per existing customer inside one transaction. Verify with `\d customers` in psql that `version` is `uuid NOT NULL` with the `ck_customers_version` check. Compare the row count and the six original columns before and after, and verify that every row has a non-empty version. Coordinate the migration with the API deployment because the old API writes without the column and the new API reads and writes it.
@@ -86,6 +87,8 @@ The second migration adds the seventh customer column and backfills a distinct U
 The third migration adds `active BOOLEAN NOT NULL DEFAULT TRUE` in one transaction. Coordinate a pause in customer writes while verifying the migration. Compare row counts and a deterministic snapshot of the original columns, including `version`, before and after without publishing customer data. Immediately after the first application, verify that all existing rows are active and that the tax ID constraint remains in place. Apply the migration before starting the API that reads `active`. If the column already exists, verify its definition and investigate incompatible schema before proceeding.
 
 The fourth migration creates the `users` table in one transaction. If the table exists, check its definition before deciding whether the migration is pending. On first application, verify all five columns, their types and nullability, the active default, and the primary key, unique email and text check constraints. Compare the existing customer data before and after using a private snapshot.
+
+The fifth migration adds nullable `created_by_user_id` and `updated_by_user_id` to `customers`, with foreign keys to `users.id` that restrict deletion of referenced users. Apply it before deploying the updated WebApi. Existing customers retain null authorship. The API takes the author from the authenticated JWT and writes it with the customer change. The audit fields are available in PostgreSQL and remain outside the HTTP payloads.
 
 ## Customer listing
 

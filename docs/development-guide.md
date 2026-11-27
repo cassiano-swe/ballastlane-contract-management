@@ -12,6 +12,8 @@ Apply `003_add_customer_active.sql` to the local development database before sta
 
 Apply `004_create_users.sql` after verifying the existing local schema and migration sequence. Verify the user column types, length limits, required fields, true active default and named constraints. Compare Customer data before and after the first application without exporting customer records. Use synthetic hashes for persistence tests and keep Npgsql parameter logging disabled for this data source.
 
+Apply `005_add_customer_authorship.sql` after `004` and before deploying the updated WebApi. Verify the nullable UUID columns, both restrictive foreign keys, and null authorship on pre-existing customers. Test writes with a token whose subject corresponds to a user in the target database.
+
 Provision the demo account manually using the seed under `database/seeds` on verified local development PostgreSQL. The credential is public. A repeat preserves the existing account, so investigate a failed demo login without resetting an existing user's hash or activation. Both APIs require the matching JWT settings described in the README. Keep credentials, hashes and tokens out of logs and use isolated keys in tests.
 
 Add Angular feature folders under `src/app/features`, shared UI under `shared`, cross-cutting services under `core`, and layout components under `layouts`. Configure API URLs for each deployment. Do not embed secrets in frontend files.

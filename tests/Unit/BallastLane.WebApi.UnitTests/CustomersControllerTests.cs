@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using BallastLane.Application.Abstractions.Persistence;
 using BallastLane.Application.UseCases.Customers.CreateCustomer;
 using BallastLane.Application.UseCases.Customers.DeleteCustomer;
@@ -9,6 +10,7 @@ using BallastLane.Domain.Enums;
 using BallastLane.WebApi.Controllers;
 using BallastLane.WebApi.Models.Requests.Customers;
 using BallastLane.WebApi.Models.Responses.Customers;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using NSubstitute;
 using Xunit;
@@ -17,6 +19,7 @@ namespace BallastLane.WebApi.UnitTests;
 
 public class CustomersControllerTests
 {
+    private static readonly Guid AuthorId = Guid.NewGuid();
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -67,7 +70,7 @@ public class CustomersControllerTests
         var expectedVersion = customer.Version;
         using var source = new CancellationTokenSource();
         repository.GetByIdAsync(customer.Id, source.Token).Returns(customer);
-        repository.UpdateAsync(customer, expectedVersion, source.Token).Returns(true);
+        repository.UpdateAsync(customer, expectedVersion, AuthorId, source.Token).Returns(true);
 
         var result = await CreateController(repository).Update(customer.Id, new UpdateCustomerRequest
         {
@@ -80,7 +83,7 @@ public class CustomersControllerTests
             "new@example.com", customer.Version), Assert.IsType<UpdateCustomerResponse>(ok.Value));
         Assert.NotEqual(expectedVersion, customer.Version);
         await repository.Received(1).GetByIdAsync(customer.Id, source.Token);
-        await repository.Received(1).UpdateAsync(customer, expectedVersion, source.Token);
+        await repository.Received(1).UpdateAsync(customer, expectedVersion, AuthorId, source.Token);
     }
 
     [Fact]
@@ -91,13 +94,22 @@ public class CustomersControllerTests
         var expectedVersion = customer.Version;
         using var source = new CancellationTokenSource();
         repository.GetByIdAsync(customer.Id, source.Token).Returns(customer);
-        repository.DeactivateAsync(customer.Id, expectedVersion, Arg.Any<Guid>(), source.Token).Returns(true);
+        repository.DeactivateAsync(customer.Id, expectedVersion, Arg.Any<Guid>(), AuthorId, source.Token).Returns(true);
 
         Assert.IsType<NoContentResult>(await CreateController(repository).Delete(customer.Id, expectedVersion, source.Token));
-        await repository.Received(1).DeactivateAsync(customer.Id, expectedVersion, customer.Version, source.Token);
+        await repository.Received(1).DeactivateAsync(customer.Id, expectedVersion, customer.Version, AuthorId, source.Token);
     }
 
     private static CustomersController CreateController(ICustomerRepository repository) =>
         new(new CreateCustomerHandler(new(), repository), new ListCustomersHandler(repository),
-            new GetCustomerByIdHandler(new(), repository), new UpdateCustomerHandler(new(), repository), new DeleteCustomerHandler(new(), repository));
+            new GetCustomerByIdHandler(new(), repository), new UpdateCustomerHandler(new(), repository), new DeleteCustomerHandler(new(), repository))
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", AuthorId.ToString())], "Bearer"))
+                }
+            }
+        };
 }

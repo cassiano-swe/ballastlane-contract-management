@@ -17,6 +17,7 @@ public class CustomerTests
         await database.StartAsync();
         await using var ds = NpgsqlDataSource.Create(database.GetConnectionString());
         await CustomerMigrations.ApplyAllAsync(ds);
+        await TestJwt.SeedAuthorAsync(ds);
         await using var app = new WebApplicationFactory<business::Program>().WithWebHostBuilder(builder => {
             builder.UseEnvironment("Development");
             builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:Postgres"] = database.GetConnectionString(), ["Jwt:Issuer"] = TestJwt.Issuer, ["Jwt:Audience"] = TestJwt.Audience, ["Jwt:SigningKey"] = TestJwt.SigningKey }));

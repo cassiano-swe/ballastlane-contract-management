@@ -17,10 +17,11 @@ public class DeleteCustomerRepositoryTests
         await using var source = NpgsqlDataSource.Create(database.GetConnectionString());
         await using var otherSource = NpgsqlDataSource.Create(database.GetConnectionString());
         await CustomerMigrations.ApplyAllAsync(source);
+        await TestJwt.SeedAuthorAsync(source);
         var repository = new CustomerRepository(source);
         var otherRepository = new CustomerRepository(otherSource);
         var customer = new Customer("Acme", "Shop", CustomerType.Company, "001", "a@example.com");
-        await repository.CreateAsync(customer, default);
+        await repository.CreateAsync(customer, TestJwt.UserId, default);
         var before = Assert.Single(await repository.ListAsync(default));
         Assert.True(before.Active);
         Assert.Equal(customer.Version, before.Version);
@@ -28,19 +29,19 @@ public class DeleteCustomerRepositoryTests
         var secondVersion = Guid.NewGuid();
         var staleVersion = Guid.NewGuid();
 
-        Assert.False(await repository.DeactivateAsync(customer.Id, staleVersion, firstVersion, default));
+        Assert.False(await repository.DeactivateAsync(customer.Id, staleVersion, firstVersion, TestJwt.UserId, default));
         var stillActive = Assert.Single(await repository.ListAsync(default));
         Assert.Equal(State(before), State(stillActive));
         Assert.Equal((true, before.Version), (stillActive.Active, stillActive.Version));
 
         var results = await Task.WhenAll(
-            repository.DeactivateAsync(customer.Id, customer.Version, firstVersion, default),
-            otherRepository.DeactivateAsync(customer.Id, customer.Version, secondVersion, default));
+            repository.DeactivateAsync(customer.Id, customer.Version, firstVersion, TestJwt.UserId, default),
+            otherRepository.DeactivateAsync(customer.Id, customer.Version, secondVersion, TestJwt.UserId, default));
 
         Assert.Single(results, persisted => persisted);
         var winner = results[0] ? firstVersion : secondVersion;
-        Assert.False(await repository.DeactivateAsync(customer.Id, winner, Guid.NewGuid(), default));
-        Assert.False(await repository.DeactivateAsync(Guid.NewGuid(), winner, Guid.NewGuid(), default));
+        Assert.False(await repository.DeactivateAsync(customer.Id, winner, Guid.NewGuid(), TestJwt.UserId, default));
+        Assert.False(await repository.DeactivateAsync(Guid.NewGuid(), winner, Guid.NewGuid(), TestJwt.UserId, default));
         var after = Assert.Single(await repository.ListAsync(default));
         Assert.Equal((false, winner), (after.Active, after.Version));
         Assert.Equal(State(before), State(after));

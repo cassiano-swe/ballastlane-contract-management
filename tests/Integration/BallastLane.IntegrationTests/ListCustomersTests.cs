@@ -25,6 +25,7 @@ public class ListCustomersTests
         await database.StartAsync();
         await using var dataSource = NpgsqlDataSource.Create(database.GetConnectionString());
         await CustomerMigrations.ApplyAllAsync(dataSource);
+        await TestJwt.SeedAuthorAsync(dataSource);
         await using var app = Factory(database.GetConnectionString());
         using var client = app.CreateAuthenticatedClient();
 
@@ -166,9 +167,9 @@ public class ListCustomersTests
 
     private sealed class FailingRepository : ICustomerRepository
     {
-        public Task<bool> DeactivateAsync(Guid id, Guid expectedVersion, Guid newVersion, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task<bool> UpdateAsync(Customer customer, Guid expectedVersion, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task CreateAsync(Customer customer, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<bool> DeactivateAsync(Guid id, Guid expectedVersion, Guid newVersion, Guid authorId, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<bool> UpdateAsync(Customer customer, Guid expectedVersion, Guid authorId, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task CreateAsync(Customer customer, Guid authorId, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<IReadOnlyList<Customer>> ListAsync(CancellationToken cancellationToken) =>
             throw new InvalidOperationException("test-sensitive-detail");

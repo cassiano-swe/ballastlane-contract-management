@@ -28,12 +28,13 @@ public class GetCustomerByIdTests
         var connectionString = database.GetConnectionString();
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
         await CustomerMigrations.ApplyAllAsync(dataSource);
+        await TestJwt.SeedAuthorAsync(dataSource);
 
         var id = Guid.NewGuid();
         var version = Guid.NewGuid();
         var repository = new CustomerRepository(dataSource);
         await repository.CreateAsync(Customer.Reconstitute(id, "Alex Taylor", null, CustomerType.Individual,
-            "001'23", "alex@example.com", version, false), default);
+            "001'23", "alex@example.com", version, false), TestJwt.UserId, default);
         using var logs = new TestLogProvider();
         await using var app = Factory(connectionString).WithWebHostBuilder(builder =>
             builder.ConfigureLogging(logging => logging.AddProvider(logs)));
@@ -205,9 +206,9 @@ public class GetCustomerByIdTests
 
     private sealed class FailingRepository : ICustomerRepository
     {
-        public Task<bool> DeactivateAsync(Guid id, Guid expectedVersion, Guid newVersion, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task<bool> UpdateAsync(Customer customer, Guid expectedVersion, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task CreateAsync(Customer customer, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<bool> DeactivateAsync(Guid id, Guid expectedVersion, Guid newVersion, Guid authorId, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<bool> UpdateAsync(Customer customer, Guid expectedVersion, Guid authorId, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task CreateAsync(Customer customer, Guid authorId, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<IReadOnlyList<Customer>> ListAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<Customer?> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("test-sensitive-detail");

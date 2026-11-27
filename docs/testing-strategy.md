@@ -55,3 +55,9 @@ The baseline passed 113 unit tests and 53 integration tests. The updated suite p
 Tests verify exact password handling, salted hashes, malformed and legacy hash handling, JWT claims and configuration, safe login failures, Bearer challenges and OpenAPI security. Customer fixtures use isolated test keys with real JWT validation. A cross-host test provisions the demonstration user in disposable PostgreSQL, repeats the seed, logs in through IdentityApi and uses the issued token against WebApi for Customer creation, listing, retrieval, update and soft deletion, including conflict responses.
 
 Local development verification applied the seed twice against the existing schema with one insert and zero inserts on repeat. The account and all three existing Customer rows were verified unchanged on repeat. With temporary loopback hosts and a shared ephemeral JWT key, login and the authenticated list returned 200, the unauthenticated list returned a Bearer 401, and both OpenAPI documents reflected endpoint access.
+
+## Customer authorship verification
+
+The authorship integration test creates a Customer before applying migration `005`, then logs two isolated users into IdentityApi against disposable PostgreSQL. It verifies the database row after WebApi creation, edits and soft deletion, including null creator on the legacy row, ignored caller-supplied authorship and preservation on a stale version or repeated inactive DELETE. It also checks that missing, malformed and empty JWT subjects are challenged without changing the database. A repository race uses different authors and verifies the winner's data and authorship survive the losing write.
+
+The solution build passed with no warnings. The full suite passed 131 unit tests and 68 integration tests, including the Customer regression suite.

@@ -4,6 +4,7 @@ using BallastLane.Application.UseCases.Customers.GetCustomerById;
 using BallastLane.Application.UseCases.Customers.ListCustomers;
 using BallastLane.Application.UseCases.Customers.UpdateCustomer;
 using BallastLane.WebApi.Models.Requests.Customers;
+using BallastLane.WebApi.Extensions;
 using BallastLane.WebApi.Models.Responses.Customers;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
@@ -62,6 +63,7 @@ public sealed class CustomersController(
     /// <response code="409">The customer version is stale or the tax ID belongs to another customer.</response>
     /// <response code="500">An unexpected error occurred. The response includes a request trace identifier.</response>
     [HttpPut("{id}")]
+    [RequireCustomerAuthor]
     [ProducesResponseType<UpdateCustomerResponse>(StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
@@ -72,6 +74,7 @@ public sealed class CustomersController(
     {
         var result = await updateHandler.HandleAsync(
             new(id, request.Name, request.TradeName, request.CustomerType!.Value, request.TaxId, request.Email, request.Version!.Value),
+            RequireCustomerAuthorAttribute.GetUserId(User)!.Value,
             cancellationToken);
         return Ok(new UpdateCustomerResponse(
             result.Id, result.Name, result.TradeName, result.CustomerType, result.TaxId, result.Email, result.Version));
@@ -88,6 +91,7 @@ public sealed class CustomersController(
     /// <response code="409">The customer version is stale. Retrieve the latest customer state before deciding whether to retry.</response>
     /// <response code="500">An unexpected error occurred. The response includes a request trace identifier.</response>
     [HttpDelete("{id}")]
+    [RequireCustomerAuthor]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
@@ -96,20 +100,23 @@ public sealed class CustomersController(
     public async Task<IActionResult> Delete(
         [FromRoute] Guid id, [FromQuery, BindRequired] Guid version, CancellationToken cancellationToken)
     {
-        await deleteHandler.HandleAsync(new(id, version), cancellationToken);
+        await deleteHandler.HandleAsync(new(id, version), RequireCustomerAuthorAttribute.GetUserId(User)!.Value, cancellationToken);
         return NoContent();
     }
 
     /// <summary>Creates a customer.</summary>
     /// <remarks>New customers are active by default. CustomerType must be the string Individual or Company. TradeName is allowed only for Company.</remarks>
     [HttpPost]
+    [RequireCustomerAuthor]
     [ProducesResponseType<CreateCustomerResponse>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<CreateCustomerResponse>> Create(CreateCustomerRequest request, CancellationToken cancellationToken)
     {
-        var result = await createHandler.HandleAsync(new(request.Name, request.TradeName, request.CustomerType!.Value, request.TaxId, request.Email), cancellationToken);
+        var result = await createHandler.HandleAsync(
+            new(request.Name, request.TradeName, request.CustomerType!.Value, request.TaxId, request.Email),
+            RequireCustomerAuthorAttribute.GetUserId(User)!.Value, cancellationToken);
         var location = Url.Action(nameof(GetById), new { id = result.Id })
             ?? throw new InvalidOperationException("The customer route could not be generated.");
         return Created(location, new CreateCustomerResponse(result.Id, result.Name, result.TradeName, result.CustomerType, result.TaxId, result.Email, result.Version));

@@ -49,15 +49,16 @@ public sealed class CustomerRepository(NpgsqlDataSource dataSource) : ICustomerR
             reader.GetGuid(6),
             reader.GetBoolean(7));
 
-    public async Task<bool> UpdateAsync(Customer customer, Guid expectedVersion, CancellationToken cancellationToken)
+    public async Task<bool> UpdateAsync(Customer customer, Guid expectedVersion, Guid authorId, CancellationToken cancellationToken)
     {
         await using var command = dataSource.CreateCommand("""
             UPDATE customers
             SET name = @name, trade_name = @trade_name, customer_type = @customer_type,
-                tax_id = @tax_id, email = @email, version = @new_version
+                tax_id = @tax_id, email = @email, version = @new_version, updated_by_user_id = @author_id
             WHERE id = @id AND version = @expected_version;
             """);
         BindCustomer(command, customer, "new_version");
+        command.Parameters.AddWithValue("author_id", NpgsqlDbType.Uuid, authorId);
         command.Parameters.AddWithValue("expected_version", NpgsqlDbType.Uuid, expectedVersion);
         return await ExecuteWriteAsync(command, cancellationToken) switch
         {
@@ -67,16 +68,17 @@ public sealed class CustomerRepository(NpgsqlDataSource dataSource) : ICustomerR
         };
     }
 
-    public async Task<bool> DeactivateAsync(Guid id, Guid expectedVersion, Guid newVersion, CancellationToken cancellationToken)
+    public async Task<bool> DeactivateAsync(Guid id, Guid expectedVersion, Guid newVersion, Guid authorId, CancellationToken cancellationToken)
     {
         await using var command = dataSource.CreateCommand("""
             UPDATE customers
-            SET active = FALSE, version = @new_version
+            SET active = FALSE, version = @new_version, updated_by_user_id = @author_id
             WHERE id = @id AND version = @expected_version AND active = TRUE;
             """);
         command.Parameters.AddWithValue("id", NpgsqlDbType.Uuid, id);
         command.Parameters.AddWithValue("expected_version", NpgsqlDbType.Uuid, expectedVersion);
         command.Parameters.AddWithValue("new_version", NpgsqlDbType.Uuid, newVersion);
+        command.Parameters.AddWithValue("author_id", NpgsqlDbType.Uuid, authorId);
         return await command.ExecuteNonQueryAsync(cancellationToken) switch
         {
             1 => true,
@@ -85,14 +87,15 @@ public sealed class CustomerRepository(NpgsqlDataSource dataSource) : ICustomerR
         };
     }
 
-    public async Task CreateAsync(Customer customer, CancellationToken cancellationToken)
+    public async Task CreateAsync(Customer customer, Guid authorId, CancellationToken cancellationToken)
     {
         await using var command = dataSource.CreateCommand("""
-            INSERT INTO customers (id, name, trade_name, customer_type, tax_id, email, version, active)
-            VALUES (@id, @name, @trade_name, @customer_type, @tax_id, @email, @version, @active)
+            INSERT INTO customers (id, name, trade_name, customer_type, tax_id, email, version, active, created_by_user_id)
+            VALUES (@id, @name, @trade_name, @customer_type, @tax_id, @email, @version, @active, @author_id)
             """);
         BindCustomer(command, customer, "version");
         command.Parameters.AddWithValue("active", NpgsqlDbType.Boolean, customer.Active);
+        command.Parameters.AddWithValue("author_id", NpgsqlDbType.Uuid, authorId);
         if (await ExecuteWriteAsync(command, cancellationToken) != 1)
             throw new InvalidOperationException("Customer insertion did not affect one row.");
     }
