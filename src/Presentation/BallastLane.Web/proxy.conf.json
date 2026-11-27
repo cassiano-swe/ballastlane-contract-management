@@ -1,0 +1,10 @@
+{
+  "/identity-api/**": {
+    "target": "http://localhost:5102",
+    "pathRewrite": { "^/identity-api": "" }
+  },
+  "/business-api/**": {
+    "target": "http://localhost:5101",
+    "pathRewrite": { "^/business-api": "" }
+  }
+}

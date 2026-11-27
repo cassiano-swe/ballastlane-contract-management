@@ -1,0 +1,15 @@
+mat-sidenav-container { min-height: 100dvh; background: var(--canvas); color: var(--ink); }
+.sidebar { width: min(15.5rem, 85vw); background: var(--navy); color: white; border-radius: 0; }
+.brand { padding: 1.3rem 1.25rem; font-size: 1.25rem; font-weight: 750; }
+nav { display: grid; gap: .4rem; padding: .75rem; }
+nav a, .upcoming { display: flex; gap: .5rem; align-items: center; justify-content: space-between;
+  padding: .65rem .75rem; min-height: 44px; border-radius: .5rem; }
+nav a { color: white; text-decoration: none; }
+nav a.active { background: #243f64; }
+.upcoming { color: #c3d2e7; }
+small { font-size: .875rem; }
+header { display: flex; justify-content: space-between; gap: .5rem; padding: .7rem clamp(.65rem, 3vw, 2rem);
+  background: var(--surface); border-bottom: 1px solid var(--border); }
+.account { margin-inline-start: auto; display: flex; gap: .75rem; align-items: center; }
+button { min-height: 44px; }
+main { padding: clamp(1rem, 4vw, 3rem); }

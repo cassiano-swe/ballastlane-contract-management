@@ -1,0 +1,24 @@
+<mat-sidenav-container>
+  <mat-sidenav #drawer class="sidebar" [mode]="narrow() ? 'over' : 'side'"
+               [opened]="!narrow()" id="workspace-navigation">
+    <div class="brand">BallastLane</div>
+    <nav aria-label="Workspace">
+      <a routerLink="/dashboard" routerLinkActive="active" ariaCurrentWhenActive="page"
+         (click)="narrow() && drawer.close()">Dashboard</a>
+      <span class="upcoming">Customers <small>Upcoming</small></span>
+      <span class="upcoming">Contracts <small>Planned</small></span>
+    </nav>
+  </mat-sidenav>
+  <mat-sidenav-content>
+    <header>
+      @if (narrow()) {
+        <button mat-button type="button" aria-controls="workspace-navigation"
+                [attr.aria-expanded]="drawer.opened" (click)="drawer.toggle()">Menu</button>
+      }
+      <div class="account"><span>Account</span>
+        <button mat-stroked-button type="button" (click)="auth.logout()">Sign out</button>
+      </div>
+    </header>
+    <main><router-outlet /></main>
+  </mat-sidenav-content>
+</mat-sidenav-container>
