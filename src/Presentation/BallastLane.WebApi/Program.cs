@@ -1,5 +1,6 @@
 using System.Text;
 using BallastLane.Application.UseCases.Customers.CreateCustomer;
+using BallastLane.Application.UseCases.Customers.GetCustomerById;
 using BallastLane.Application.UseCases.Customers.ListCustomers;
 using Microsoft.AspNetCore.Mvc;
 using BallastLane.Infrastructure;
@@ -15,6 +16,15 @@ string? issuer = null, audience = null, key = null;
 builder.Services.AddControllers().AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new CustomerTypeJsonConverter()));
 builder.Services.Configure<ApiBehaviorOptions>(options => options.InvalidModelStateResponseFactory = context =>
 {
+    const string invalidCustomerId = "The customer identifier must be a valid UUID.";
+    var hasRouteId = context.RouteData.Values.ContainsKey("id");
+    if (hasRouteId
+        && context.ModelState.TryGetValue("id", out var idState) && idState.Errors.Count > 0)
+    {
+        idState.Errors.Clear();
+        idState.Errors.Add(invalidCustomerId);
+    }
+
     var messages = context.ModelState.Where(entry => entry.Value?.Errors.Count > 0).Select(entry => entry.Key.ToLowerInvariant() switch
     {
         "name" or "$.name" => "Name is required and must be a string.",
@@ -22,6 +32,7 @@ builder.Services.Configure<ApiBehaviorOptions>(options => options.InvalidModelSt
         "customertype" or "$.customertype" => "CustomerType is required and must be either Individual or Company as a string.",
         "taxid" or "$.taxid" => "TaxId is required and must be a string.",
         "email" or "$.email" => "Email is required and must be a string.",
+        "id" when hasRouteId => invalidCustomerId,
         _ => "The request body is missing or has an invalid format."
     }).Distinct();
     var problem = new ValidationProblemDetails(context.ModelState) { Type = "about:blank", Title = "Validation failed", Status = 400, Detail = string.Join(" ", messages), Instance = context.HttpContext.Request.Path };
@@ -31,6 +42,8 @@ builder.Services.Configure<ApiBehaviorOptions>(options => options.InvalidModelSt
 builder.Services.AddScoped<CreateCustomerValidator>();
 builder.Services.AddScoped<CreateCustomerHandler>();
 builder.Services.AddScoped<ListCustomersHandler>();
+builder.Services.AddScoped<GetCustomerByIdValidator>();
+builder.Services.AddScoped<GetCustomerByIdHandler>();
 builder.Services.AddProblemDetails();
 builder.Services.AddHealthChecks();
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -51,6 +64,7 @@ builder.Services.AddSwaggerGen(options =>
     options.DocumentFilter<HealthDocumentationFilter>();
     options.OperationFilter<AuthorizationDocumentationFilter>();
     options.OperationFilter<ListCustomersDocumentationFilter>();
+    options.OperationFilter<GetCustomerByIdDocumentationFilter>();
     options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, $"{typeof(Program).Assembly.GetName().Name}.xml"));
     options.SwaggerDoc("v1", new OpenApiInfo { Title = "BallastLane Business API", Version = "v1" });
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme { Type = SecuritySchemeType.Http, Scheme = "bearer", BearerFormat = "JWT" });

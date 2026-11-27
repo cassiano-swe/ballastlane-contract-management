@@ -1,6 +1,6 @@
 # BallastLane
 
-BallastLane is a contract-management interview exercise. The business API supports customer creation and listing. Contract management, user management, and the separate Generative AI Tools assignment are out of scope. The temporary percentage example demonstrates the API architecture.
+BallastLane is a contract-management interview exercise. The business API supports customer creation, listing, and retrieval by ID. Contract management, user management, and the separate Generative AI Tools assignment are out of scope. The temporary percentage example demonstrates the API architecture.
 
 The solution uses .NET 10, ASP.NET Core MVC API controllers, FluentValidation, Npgsql/ADO.NET, JWT bearer validation, Swagger, Angular standalone components and routing, PostgreSQL, and Docker Compose. See [customer business rules](docs/customer-business-rules.md), [architecture](docs/architecture.md), [development guide](docs/development-guide.md), and [testing strategy](docs/testing-strategy.md).
 
@@ -57,7 +57,7 @@ There is no migration runner, authentication workflow, or token issuer. The heal
 
 ## Customer creation
 
-`POST /api/customers` creates an Individual or Company. This endpoint is temporarily anonymous and is not intended for production deployment. It returns `201 Created` with a `Location: /api/customers/{id}` header reserved for a future customer-by-ID endpoint.
+`POST /api/customers` creates an Individual or Company. This endpoint is temporarily anonymous and is not intended for production deployment. It returns `201 Created` with a `Location: /api/customers/{id}` header that can be followed to retrieve the new customer.
 
 ```json
 {"name":"Acme Corporation","tradeName":"Acme","customerType":"Company","taxId":"00123456789","email":"contact@acme.example"}
@@ -95,3 +95,20 @@ Unexpected failures return `500 Internal Server Error` with generic ProblemDetai
 The repository reads the six columns in one ordered PostgreSQL query. Listing retrieves all rows without filtering or pagination. As the table grows, database sorting, API memory usage, response size, and network transfer can increase.
 
 In Development, use `/swagger` for Swagger UI and `/swagger/v1/swagger.json` for the OpenAPI document. Run `dotnet test BallastLane.sln` for unit and integration tests. The PostgreSQL integration tests require Docker and use disposable databases.
+
+## Customer retrieval by ID
+
+`GET /api/customers/{id}` requires a non-empty UUID in the path. A match returns `200 OK` with one JSON object containing `id`, `name`, `tradeName`, `customerType`, `taxId`, and `email`. The response retains the stored ID, a nullable trade name, and leading zeros in the tax ID. The customer type is the string `Individual` or `Company`.
+
+| Status | Outcome |
+| --- | --- |
+| 200 | Customer found |
+| 400 | Malformed or empty UUID |
+| 404 | No customer with that UUID |
+| 500 | Unexpected failure |
+
+Errors use `application/problem+json` and include a trace ID. The repository reads the six columns in one parameterized PostgreSQL query using the primary key. It returns null for a missing row. The handler raises a customer-not-found exception that the Web API middleware maps to 404.
+
+`ICustomerRepository.GetByIdAsync` can support future update and delete use cases. A successful read does not guarantee the row will still exist when a later write runs. Future mutations must handle concurrent changes and check the affected row count.
+
+Anonymous access is temporary and is not intended for production deployment. Test this operation in Development at `/swagger` or inspect its schema at `/swagger/v1/swagger.json`. Run `dotnet test BallastLane.sln` with Docker available to exercise both HTTP and PostgreSQL behavior.

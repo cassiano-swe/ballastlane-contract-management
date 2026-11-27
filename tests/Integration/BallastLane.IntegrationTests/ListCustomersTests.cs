@@ -161,5 +161,7 @@ public class ListCustomersTests
 
         public Task<IReadOnlyList<Customer>> ListAsync(CancellationToken cancellationToken) =>
             throw new InvalidOperationException("test-sensitive-detail");
+
+        public Task<Customer?> GetByIdAsync(Guid id, CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 }

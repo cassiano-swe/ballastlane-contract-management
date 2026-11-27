@@ -8,6 +8,8 @@ using Xunit;
 using NSubstitute;
 using Microsoft.AspNetCore.Http.Features;
 using BallastLane.WebApi.Middleware;
+using BallastLane.Application.Exceptions;
+using System.Text.Json;
 namespace BallastLane.WebApi.UnitTests;
 
 public class AdditionalMiddlewareTests
@@ -58,6 +60,32 @@ public class AdditionalMiddlewareTests
         context.Response.Body.Position = 0;
         var body = await new StreamReader(context.Response.Body, Encoding.UTF8).ReadToEndAsync();
         Assert.Contains("trace-456", body); Assert.Contains("Validation failed", body);
+    }
+
+    [Fact]
+    public async Task MissingCustomerProducesSafeProblemWithoutAnUnhandledErrorLog()
+    {
+        var context = new DefaultHttpContext { TraceIdentifier = "not-found-trace" };
+        context.Request.Path = "/api/customers/10000000-0000-0000-0000-000000000001";
+        using var body = new MemoryStream();
+        context.Response.Body = body;
+        var logger = new CaptureLogger<ExceptionHandlingMiddleware>();
+        var middleware = new ExceptionHandlingMiddleware(_ => throw new CustomerNotFoundException(), logger);
+
+        await middleware.InvokeAsync(context);
+
+        Assert.Equal(404, context.Response.StatusCode);
+        Assert.Equal("application/problem+json", context.Response.ContentType);
+        body.Position = 0;
+        using var document = await JsonDocument.ParseAsync(body);
+        var problem = document.RootElement;
+        Assert.Equal("about:blank", problem.GetProperty("type").GetString());
+        Assert.Equal("Customer not found", problem.GetProperty("title").GetString());
+        Assert.Equal("The requested customer was not found.", problem.GetProperty("detail").GetString());
+        Assert.Equal(404, problem.GetProperty("status").GetInt32());
+        Assert.Equal(context.Request.Path.Value, problem.GetProperty("instance").GetString());
+        Assert.Equal(context.TraceIdentifier, problem.GetProperty("traceId").GetString());
+        Assert.Empty(logger.Entries);
     }
 
     [Fact] public async Task StartedResponsePropagatesExceptionWithoutRewriting()

@@ -1,4 +1,5 @@
 using BallastLane.Application.UseCases.Customers.CreateCustomer;
+using BallastLane.Application.UseCases.Customers.GetCustomerById;
 using BallastLane.Application.UseCases.Customers.ListCustomers;
 using BallastLane.WebApi.Models.Requests.Customers;
 using BallastLane.WebApi.Models.Responses.Customers;
@@ -8,7 +9,10 @@ namespace BallastLane.WebApi.Controllers;
 [ApiController]
 [Route("api/customers")]
 [AllowAnonymous]
-public sealed class CustomersController(CreateCustomerHandler createHandler, ListCustomersHandler listHandler) : ControllerBase
+public sealed class CustomersController(
+    CreateCustomerHandler createHandler,
+    ListCustomersHandler listHandler,
+    GetCustomerByIdHandler getByIdHandler) : ControllerBase
 {
     /// <summary>Retrieves all registered customers.</summary>
     /// <remarks>Returns all customers ordered by name and then ID. Anonymous access is temporary and is not intended for production.</remarks>
@@ -24,6 +28,26 @@ public sealed class CustomersController(CreateCustomerHandler createHandler, Lis
             customer.Id, customer.Name, customer.TradeName, customer.CustomerType, customer.TaxId, customer.Email)).ToArray());
     }
 
+    /// <summary>Retrieves a customer by its unique identifier.</summary>
+    /// <remarks>Returns one customer. Anonymous access is temporary and is not intended for production.</remarks>
+    /// <param name="id">The unique, non-empty customer UUID.</param>
+    /// <param name="cancellationToken">The request cancellation token.</param>
+    /// <response code="200">The requested customer.</response>
+    /// <response code="400">The identifier is malformed or empty.</response>
+    /// <response code="404">No customer has the requested identifier.</response>
+    /// <response code="500">An unexpected error occurred. The response includes a request trace identifier.</response>
+    [HttpGet("{id}")]
+    [ProducesResponseType<GetCustomerByIdResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status500InternalServerError, "application/problem+json")]
+    public async Task<ActionResult<GetCustomerByIdResponse>> GetById([FromRoute] Guid id, CancellationToken cancellationToken)
+    {
+        var customer = await getByIdHandler.HandleAsync(new(id), cancellationToken);
+        return Ok(new GetCustomerByIdResponse(
+            customer.Id, customer.Name, customer.TradeName, customer.CustomerType, customer.TaxId, customer.Email));
+    }
+
     /// <summary>Creates a customer.</summary>
     /// <remarks>CustomerType must be the string Individual or Company. TradeName is allowed only for Company. Anonymous access is temporary and is not intended for production.</remarks>
     [HttpPost]
@@ -34,6 +58,8 @@ public sealed class CustomersController(CreateCustomerHandler createHandler, Lis
     public async Task<ActionResult<CreateCustomerResponse>> Create(CreateCustomerRequest request, CancellationToken cancellationToken)
     {
         var result = await createHandler.HandleAsync(new(request.Name, request.TradeName, request.CustomerType!.Value, request.TaxId, request.Email), cancellationToken);
-        return Created($"/api/customers/{result.Id}", new CreateCustomerResponse(result.Id, result.Name, result.TradeName, result.CustomerType, result.TaxId, result.Email));
+        var location = Url.Action(nameof(GetById), new { id = result.Id })
+            ?? throw new InvalidOperationException("The customer route could not be generated.");
+        return Created(location, new CreateCustomerResponse(result.Id, result.Name, result.TradeName, result.CustomerType, result.TaxId, result.Email));
     }
 }
