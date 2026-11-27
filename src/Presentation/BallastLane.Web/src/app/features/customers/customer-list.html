@@ -1,0 +1,62 @@
+<header class="heading">
+  <h1>Customers</h1>
+  <a mat-flat-button routerLink="new">New Customer</a>
+</header>
+@let state = customers.state();
+@switch (state.kind) {
+  @case ('loading') { <p role="status">Loading customers…</p> }
+  @case ('error') {
+    <p role="alert">{{ state.problem.message }}
+      @if (state.problem.traceId) { <small>Support reference: {{ state.problem.traceId }}</small> }
+    </p>
+    <button mat-stroked-button (click)="customers.reload()">Retry</button>
+  }
+  @case ('ready') {
+    @if (!state.value.length) {
+      <p>No customers yet.</p>
+    } @else {
+      <div class="table-scroll" role="region" aria-label="Customer list" tabindex="0">
+        <table mat-table [dataSource]="state.value" aria-label="Customers">
+          <ng-container matColumnDef="name">
+            <th mat-header-cell *matHeaderCellDef scope="col">Name</th>
+            <td mat-cell *matCellDef="let customer">{{ customer.name }}</td>
+          </ng-container>
+          <ng-container matColumnDef="tradeName">
+            <th mat-header-cell *matHeaderCellDef scope="col">Trade name</th>
+            <td mat-cell *matCellDef="let customer">{{ customer.tradeName ?? '—' }}</td>
+          </ng-container>
+          <ng-container matColumnDef="customerType">
+            <th mat-header-cell *matHeaderCellDef scope="col">Type</th>
+            <td mat-cell *matCellDef="let customer">{{ customer.customerType }}</td>
+          </ng-container>
+          <ng-container matColumnDef="taxId">
+            <th mat-header-cell *matHeaderCellDef scope="col">Tax ID</th>
+            <td mat-cell *matCellDef="let customer">{{ customer.taxId }}</td>
+          </ng-container>
+          <ng-container matColumnDef="email">
+            <th mat-header-cell *matHeaderCellDef scope="col">Email</th>
+            <td mat-cell *matCellDef="let customer">{{ customer.email }}</td>
+          </ng-container>
+          <ng-container matColumnDef="status">
+            <th mat-header-cell *matHeaderCellDef scope="col">Status</th>
+            <td mat-cell *matCellDef="let customer">
+              <span class="status" [class.inactive]="!customer.active">{{ customer.active ? 'Active' : 'Inactive' }}</span>
+            </td>
+          </ng-container>
+          <ng-container matColumnDef="actions">
+            <th mat-header-cell *matHeaderCellDef scope="col">Actions</th>
+            <td mat-cell *matCellDef="let customer">
+              <div class="actions">
+                <a mat-button [routerLink]="[customer.id]" [attr.aria-label]="'View ' + customer.name">View</a>
+                <a mat-button [routerLink]="[customer.id, 'edit']" [attr.aria-label]="'Edit ' + customer.name">Edit</a>
+                <app-customer-deactivate [customer]="customer" (refresh)="customers.reload()" />
+              </div>
+            </td>
+          </ng-container>
+          <tr mat-header-row *matHeaderRowDef="columns"></tr>
+          <tr mat-row *matRowDef="let customer; columns: columns"></tr>
+        </table>
+      </div>
+    }
+  }
+}

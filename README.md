@@ -1,6 +1,6 @@
 # BallastLane
 
-BallastLane is a contract-management interview exercise. The Angular workspace provides sign-in and an authenticated dashboard. The business API supports customer creation, listing, retrieval, update, and deactivation. The Identity API authenticates users and issues the access tokens required by Customer operations. Customer screens are the next frontend step. Contract CRUD is TODO. User management and the separate Generative AI Tools assignment are out of scope. The temporary percentage example demonstrates the API architecture.
+BallastLane is a contract-management interview exercise. The Angular workspace provides sign-in, an authenticated dashboard and Customer management. The business API supports customer creation, listing, retrieval, update, and deactivation. The Identity API authenticates users and issues the access tokens required by Customer operations. Contract CRUD is TODO. User management and the separate Generative AI Tools assignment are out of scope. The temporary percentage example demonstrates the API architecture.
 
 The solution uses .NET 10, ASP.NET Core MVC API controllers, FluentValidation, Npgsql/ADO.NET, JWT bearer validation, Swagger, Angular standalone components and routing, PostgreSQL, and Docker Compose. See [customer business rules](docs/customer-business-rules.md), [architecture](docs/architecture.md), [development guide](docs/development-guide.md), and [testing strategy](docs/testing-strategy.md).
 
@@ -233,6 +233,23 @@ Public registration is excluded by the project owner. Review this decision again
 `/login` is public and `/dashboard` is private. The root and unknown paths lead to the dashboard for an active session or to sign-in otherwise. The frontend keeps the access token in memory, so a full reload requires a new login. An expired session returns to sign-in even when idle. Sign-out clears the local session. An issued JWT remains usable until server-side expiration.
 
 The interceptor attaches Bearer credentials only to the configured business Customer collection and item URLs. A 401 for the current Bearer session returns to sign-in. Login errors stay in the form. The frontend can honor a `Retry-After` header on HTTP 429 if an upstream component sends it. WebApi continues to enforce authorization on Customer operations.
+
+## Angular Customer management
+
+Sign in with the documented local demo account and open **Customers**. The authenticated layout lazy-loads the feature under `src/app/features/customers`. Its HTTP service uses the configured Business API, proxied at `/business-api` in both host development and Compose.
+
+| Route | Screen |
+| --- | --- |
+| `/customers` | Unpaginated list in server order |
+| `/customers/new` | Create a customer |
+| `/customers/:id` | Customer details |
+| `/customers/:id/edit` | Edit a customer |
+
+The forms validate trimmed input, keep tax IDs as text and allow a trade name only for companies. The API remains authoritative, including for tax ID uniqueness. Deactivation requires confirmation and leaves the record visible and editable as **Inactive**. Reactivation is outside this delivery.
+
+The UI sends the version from the displayed record on edits and deactivation. If another operation changes the record, the UI keeps the draft and offers an explicit reload. Confirming the reload replaces the draft with the latest server values. Any further write requires a new submission. The UI refreshes from the API after successful writes.
+
+For host development, start PostgreSQL and both APIs as described above and run `npm start` from the frontend workspace. For Compose, use the same stack and migration/seed preparation described above. Public registration remains outside this delivery.
 
 Run the following from `src/Presentation/BallastLane.Web` with Node.js 22 and Chrome available:
 

@@ -20,7 +20,7 @@ describe('Application routes', () => {
   it('redirects anonymous root, unknown routes and dashboard to login', async () => {
     const harness = await RouterTestingHarness.create('/');
     expect(router.url).toBe('/login');
-    for (const url of ['/dashboard', '/missing']) {
+    for (const url of ['/dashboard', '/customers', '/customers/new', '/customers/test', '/customers/test/edit', '/missing']) {
       await harness.navigateByUrl(url);
       expect(router.url).toBe('/login');
     }
@@ -42,7 +42,7 @@ describe('Application routes', () => {
     const layout = harness.routeNativeElement!;
     expect(layout.querySelector('main h1')?.textContent).toBe('Dashboard');
     expect(layout.querySelector('nav a')?.textContent).toBe('Dashboard');
-    expect(layout.querySelectorAll('nav a').length).toBe(1);
+    expect(layout.querySelectorAll('nav a').length).toBe(2);
     expect(layout.querySelector('nav')?.textContent).toContain('Customers');
     Array.from(layout.querySelectorAll('button'))
       .find((button) => button.textContent?.trim() === 'Sign out')!.click();

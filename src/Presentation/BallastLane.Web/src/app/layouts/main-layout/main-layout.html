@@ -5,7 +5,8 @@
     <nav aria-label="Workspace">
       <a routerLink="/dashboard" routerLinkActive="active" ariaCurrentWhenActive="page"
          (click)="narrow() && drawer.close()">Dashboard</a>
-      <span class="upcoming">Customers <small>Upcoming</small></span>
+      <a routerLink="/customers" routerLinkActive="active" ariaCurrentWhenActive="page"
+         (click)="narrow() && drawer.close()">Customers</a>
       <span class="upcoming">Contracts <small>Planned</small></span>
     </nav>
   </mat-sidenav>
