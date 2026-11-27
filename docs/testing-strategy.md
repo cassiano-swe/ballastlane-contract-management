@@ -41,3 +41,9 @@ The pre-change baseline passed 88 unit tests and 37 integration tests. The new D
 Integration tests apply all migrations in order to fresh PostgreSQL 17 containers. A separate migration test applies `003` to a schema with existing rows and checks preservation of identifiers, business data and versions, plus the default and null constraint. The HTTP lifecycle verifies the original row remains retrievable and retains its tax ID after deactivation. Tests also verify repeated DELETE, PUT on inactive customers, traceable errors, request logs and OpenAPI. At repository level, two independent data sources compete for one version. At HTTP level, a test-only gate makes both requests read the same version before DELETE competes with another DELETE or PUT.
 
 The full solution passed 103 unit tests and 49 integration tests with `dotnet test BallastLane.sln --no-restore -m:1`. Migration verification used isolated databases.
+
+## User domain and persistence verification
+
+The pre-change baseline passed 103 unit tests and 49 integration tests. The new Domain tests first failed to compile because the User entity was absent. The full solution then passed 113 unit tests and 53 integration tests with `dotnet test BallastLane.sln --no-restore -m:1`, including the existing Customer suite.
+
+Repository integration tests apply all scripts in order in disposable PostgreSQL 17. They verify dependency injection, exact synthetic hash persistence, normalized lookup, inactive user retrieval and safe error translation. Two independent data sources insert different users with the same normalized email and verify one success, one duplicate-user exception and one persisted row. The migration compatibility test applies `004` to existing Customer data and verifies complete row preservation, required fields, blank-text checks and the active default.

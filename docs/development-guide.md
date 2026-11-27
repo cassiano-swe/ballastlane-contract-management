@@ -10,6 +10,8 @@ Customer update uses the existing version column and tax ID constraint. Verify t
 
 Apply `003_add_customer_active.sql` to the local development database before starting the API that reads `active`. Check whether the column already exists and verify the definition before deciding if the script is pending. On first application, compare counts and a private deterministic snapshot of the seven original columns before and after. Verify the boolean type, NOT NULL constraint, true default, initial active rows, and preserved tax ID uniqueness. Use fictional records in isolated PostgreSQL for mutation testing. In Development Swagger, verify that DELETE requires the version query parameter and that both GET schemas expose a boolean status.
 
+Apply `004_create_users.sql` after verifying the existing local schema and migration sequence. Verify the user column types, length limits, required fields, true active default and named constraints. Compare Customer data before and after the first application without exporting customer records. Use synthetic hashes for persistence tests and keep Npgsql parameter logging disabled for this data source.
+
 Add Angular feature folders under `src/app/features`, shared UI under `shared`, cross-cutting services under `core`, and layout components under `layouts`. Configure API URLs for each deployment. Do not embed secrets in frontend files.
 
 To remove the temporary demonstration, delete Domain/Examples/Percentage.cs, Application/UseCases/Examples, ExampleController, its request and response models, the handler and validator registrations in the business API composition root, and the example-specific tests and documentation. Keep the middleware and infrastructure configuration. Check Swagger and rerun the suite afterward.

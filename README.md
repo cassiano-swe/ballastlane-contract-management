@@ -1,6 +1,6 @@
 # BallastLane
 
-BallastLane is a contract-management interview exercise. The business API supports customer creation, listing, and retrieval by ID. Contract management, user management, and the separate Generative AI Tools assignment are out of scope. The temporary percentage example demonstrates the API architecture.
+BallastLane is a contract-management interview exercise. The business API supports customer creation, listing, retrieval, update, and deactivation. The User domain provides persistence for the upcoming authentication work. Contract CRUD is TODO. User management and the separate Generative AI Tools assignment are out of scope. The temporary percentage example demonstrates the API architecture.
 
 The solution uses .NET 10, ASP.NET Core MVC API controllers, FluentValidation, Npgsql/ADO.NET, JWT bearer validation, Swagger, Angular standalone components and routing, PostgreSQL, and Docker Compose. See [customer business rules](docs/customer-business-rules.md), [architecture](docs/architecture.md), [development guide](docs/development-guide.md), and [testing strategy](docs/testing-strategy.md).
 
@@ -69,19 +69,22 @@ The response adds the generated `id` and `version` to the customer fields. New c
 {"id":"6d8df8a5-8ef2-4c6e-90f5-1dc89e923c17","name":"Acme Corporation","tradeName":"Acme","customerType":"Company","taxId":"00123456789","email":"contact@acme.example","version":"c53db246-a877-43e1-952d-90fdedfb6781"}
 ```
 
-## Customer database migrations
+## Database migrations
 
-Inspect the healthy local Compose PostgreSQL service before applying migrations. On a fresh database, apply all three scripts in order. On an existing database, inspect the schema and apply only pending scripts.
+Inspect the healthy local Compose PostgreSQL service before applying migrations. On a fresh database, apply all four scripts in order. On an existing database, inspect the schema and apply only pending scripts.
 
 ```sh
 docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < database/migrations/001_create_customers.sql
 docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < database/migrations/002_add_customer_version.sql
 docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < database/migrations/003_add_customer_active.sql
+docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < database/migrations/004_create_users.sql
 ```
 
 The second migration adds the seventh customer column and backfills a distinct UUID per existing customer inside one transaction. Verify with `\d customers` in psql that `version` is `uuid NOT NULL` with the `ck_customers_version` check. Compare the row count and the six original columns before and after, and verify that every row has a non-empty version. Coordinate the migration with the API deployment because the old API writes without the column and the new API reads and writes it.
 
 The third migration adds `active BOOLEAN NOT NULL DEFAULT TRUE` in one transaction. Coordinate a pause in customer writes while verifying the migration. Compare row counts and a deterministic snapshot of the original columns, including `version`, before and after without publishing customer data. Immediately after the first application, verify that all existing rows are active and that the tax ID constraint remains in place. Apply the migration before starting the API that reads `active`. If the column already exists, verify its definition and investigate incompatible schema before proceeding.
+
+The fourth migration creates the `users` table in one transaction. If the table exists, check its definition before deciding whether the migration is pending. On first application, verify all five columns, their types and nullability, the active default, and the primary key, unique email and text check constraints. Compare the existing customer data before and after using a private snapshot.
 
 ## Customer listing
 
@@ -176,3 +179,11 @@ A successful transition sets `active` to false and renews the version while reta
 | 500 | Unexpected failure with a generic error message |
 
 Concurrent PUT and DELETE writes that read the same active version compete for that version. The database accepts one write and the other receives 409. GET returns the winning state. Reactivation is outside this feature. Anonymous access is temporary and requires access controls before production. The endpoint is documented in the Development Swagger UI.
+
+## User persistence
+
+The User domain holds a generated UUID, a trimmed name of up to 200 characters, a normalized email of up to 254 characters, a previously generated password hash, and an activation flag that defaults to true. Email is trimmed and lowercased using invariant rules for both creation and lookup. Reconstitution preserves stored values, including activation and the exact hash.
+
+PostgreSQL stores these fields as `id UUID`, `name VARCHAR(200)`, `email VARCHAR(254)`, `password_hash TEXT`, and `active BOOLEAN`. The scoped repository inserts through the existing Npgsql data source and reads by normalized email. The database's `uq_users_email` constraint allows only one insert when concurrent writes use the same normalized email. The application exception for a duplicate contains no submitted values.
+
+Treat password hashes as sensitive. Keep them out of logs, diagnostics and API responses. The next authentication stage will add a demonstration user, password hashing and verification, login, JWT issuance and API authorization. Public registration remains out of scope.
