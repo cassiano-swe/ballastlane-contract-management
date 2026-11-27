@@ -13,6 +13,7 @@ public static class DependencyInjection
         services.AddSingleton(_ => NpgsqlDataSource.Create(configuration.GetConnectionString("Postgres")
             ?? throw new InvalidOperationException("ConnectionStrings:Postgres must be configured.")));
         services.AddScoped<ICustomerRepository, CustomerRepository>();
+        services.AddScoped<IUserRepository, UserRepository>();
         return services;
     }
 }
