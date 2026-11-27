@@ -31,7 +31,7 @@ public class CustomersControllerTests
         var ok = Assert.IsType<OkObjectResult>(result.Result);
         var response = Assert.IsAssignableFrom<IReadOnlyList<ListCustomersResponse>>(ok.Value);
         if (populated)
-            Assert.Equal(new ListCustomersResponse(customer.Id, "Acme", "Shop", CustomerType.Company, "001", "a@example.com"),
+            Assert.Equal(new ListCustomersResponse(customer.Id, "Acme", "Shop", CustomerType.Company, "001", "a@example.com", customer.Version),
                 Assert.Single(response));
         else
             Assert.Empty(response);
@@ -43,14 +43,15 @@ public class CustomersControllerTests
     {
         var repository = Substitute.For<ICustomerRepository>();
         var id = Guid.NewGuid();
-        var customer = Customer.Reconstitute(id, "Acme", "Shop", CustomerType.Company, "001", "a@example.com");
+        var version = Guid.NewGuid();
+        var customer = Customer.Reconstitute(id, "Acme", "Shop", CustomerType.Company, "001", "a@example.com", version);
         using var source = new CancellationTokenSource();
         repository.GetByIdAsync(id, source.Token).Returns(Task.FromResult<Customer?>(customer));
 
         var result = await CreateController(repository).GetById(id, source.Token);
 
         var ok = Assert.IsType<OkObjectResult>(result.Result);
-        Assert.Equal(new GetCustomerByIdResponse(id, "Acme", "Shop", CustomerType.Company, "001", "a@example.com"),
+        Assert.Equal(new GetCustomerByIdResponse(id, "Acme", "Shop", CustomerType.Company, "001", "a@example.com", version),
             Assert.IsType<GetCustomerByIdResponse>(ok.Value));
         await repository.Received(1).GetByIdAsync(id, source.Token);
     }

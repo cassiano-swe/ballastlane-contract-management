@@ -27,14 +27,13 @@ public class GetCustomerByIdTests
         await database.StartAsync();
         var connectionString = database.GetConnectionString();
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
-        var migration = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "001_create_customers.sql"));
-        await using (var command = dataSource.CreateCommand(migration))
-            await command.ExecuteNonQueryAsync();
+        await CustomerMigrations.ApplyAllAsync(dataSource);
 
         var id = Guid.NewGuid();
+        var version = Guid.NewGuid();
         var repository = new CustomerRepository(dataSource);
         await repository.CreateAsync(Customer.Reconstitute(id, "Alex Taylor", null, CustomerType.Individual,
-            "001'23", "alex@example.com"), default);
+            "001'23", "alex@example.com", version), default);
         using var logs = new TestLogProvider();
         await using var app = Factory(connectionString).WithWebHostBuilder(builder =>
             builder.ConfigureLogging(logging => logging.AddProvider(logs)));
@@ -48,18 +47,31 @@ public class GetCustomerByIdTests
         using var fetched = await client.GetAsync(created.Headers.Location);
         Assert.Equal(HttpStatusCode.OK, fetched.StatusCode);
         Assert.True(JsonElement.DeepEquals(posted, await fetched.Content.ReadFromJsonAsync<JsonElement>()));
+        var postedId = posted.GetProperty("id").GetGuid();
+        var postedVersion = posted.GetProperty("version").GetGuid();
+        Assert.NotEqual(Guid.Empty, postedVersion);
+        var listed = await client.GetFromJsonAsync<JsonElement>("/api/customers");
+        Assert.Equal(2, listed.GetArrayLength());
+        var listedCustomer = Assert.Single(listed.EnumerateArray(), customer => customer.GetProperty("id").GetGuid() == postedId);
+        Assert.True(JsonElement.DeepEquals(posted, listedCustomer));
+        var readAgain = await client.GetFromJsonAsync<JsonElement>(created.Headers.Location);
+        Assert.True(JsonElement.DeepEquals(posted, readAgain));
+        await using var persisted = dataSource.CreateCommand("SELECT version FROM customers WHERE id = @id");
+        persisted.Parameters.AddWithValue("id", postedId);
+        Assert.Equal(postedVersion, Assert.IsType<Guid>(await persisted.ExecuteScalarAsync()));
 
         using var existing = await client.GetAsync($"/api/customers/{id}");
         Assert.Equal(HttpStatusCode.OK, existing.StatusCode);
         var body = await existing.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal(JsonValueKind.Object, body.ValueKind);
-        Assert.Equal(6, body.EnumerateObject().Count());
+        Assert.Equal(7, body.EnumerateObject().Count());
         Assert.Equal(id, body.GetProperty("id").GetGuid());
         Assert.Equal("Alex Taylor", body.GetProperty("name").GetString());
         Assert.Equal(JsonValueKind.Null, body.GetProperty("tradeName").ValueKind);
         Assert.Equal("Individual", body.GetProperty("customerType").GetString());
         Assert.Equal("001'23", body.GetProperty("taxId").GetString());
         Assert.Equal("alex@example.com", body.GetProperty("email").GetString());
+        Assert.Equal(version, body.GetProperty("version").GetGuid());
 
         var missingId = Guid.NewGuid();
         using var missing = await client.GetAsync($"/api/customers/{missingId}");
@@ -67,8 +79,7 @@ public class GetCustomerByIdTests
         Assert.Equal("Customer not found", problem.GetProperty("title").GetString());
         Assert.Equal("The requested customer was not found.", problem.GetProperty("detail").GetString());
         AssertRequestLog(logs, 404, problem.GetProperty("traceId").GetString());
-        Assert.Equal(2, (await client.GetFromJsonAsync<JsonElement>("/api/customers")).GetArrayLength());
-        await AssertRepositoryLookup(repository, id, missingId);
+        await AssertRepositoryLookup(repository, id, version, missingId);
     }
 
     [Theory]
@@ -130,14 +141,17 @@ public class GetCustomerByIdTests
         var success = responses.GetProperty("200").GetProperty("content").GetProperty("application/json");
         Assert.Equal("#/components/schemas/GetCustomerByIdResponse", success.GetProperty("schema").GetProperty("$ref").GetString());
         Assert.Equal(JsonValueKind.Object, success.GetProperty("example").ValueKind);
+        Assert.NotEqual(Guid.Empty, success.GetProperty("example").GetProperty("version").GetGuid());
         foreach (var (status, schema) in new[] { ("400", "ValidationProblemDetails"), ("404", "ProblemDetails"), ("500", "ProblemDetails") })
         {
             var mediaType = responses.GetProperty(status).GetProperty("content").GetProperty("application/problem+json");
             Assert.Equal($"#/components/schemas/{schema}", mediaType.GetProperty("schema").GetProperty("$ref").GetString());
         }
         var schemas = swagger.RootElement.GetProperty("components").GetProperty("schemas");
-        Assert.True(schemas.GetProperty("GetCustomerByIdResponse").GetProperty("properties")
-            .GetProperty("tradeName").GetProperty("nullable").GetBoolean());
+        var customerProperties = schemas.GetProperty("GetCustomerByIdResponse").GetProperty("properties");
+        Assert.True(customerProperties.GetProperty("tradeName").GetProperty("nullable").GetBoolean());
+        Assert.Equal("uuid", customerProperties.GetProperty("version").GetProperty("format").GetString());
+        Assert.Contains("optimistic concurrency token", customerProperties.GetProperty("version").GetProperty("description").GetString());
         var customerType = schemas.GetProperty("CustomerType");
         Assert.Equal("string", customerType.GetProperty("type").GetString());
         Assert.Equal(new[] { "Individual", "Company" },
@@ -178,11 +192,12 @@ public class GetCustomerByIdTests
             && values.ContainsKey("ElapsedMilliseconds"));
     }
 
-    private static async Task AssertRepositoryLookup(CustomerRepository repository, Guid id, Guid missingId)
+    private static async Task AssertRepositoryLookup(CustomerRepository repository, Guid id, Guid version, Guid missingId)
     {
         var customer = Assert.IsType<Customer>(await repository.GetByIdAsync(id, default));
         Assert.Equal((id, "Alex Taylor", (string?)null, CustomerType.Individual, "001'23", "alex@example.com"),
             (customer.Id, customer.Name, customer.TradeName, customer.CustomerType, customer.TaxId, customer.Email));
+        Assert.Equal(version, customer.Version);
         Assert.Null(await repository.GetByIdAsync(missingId, default));
     }
 

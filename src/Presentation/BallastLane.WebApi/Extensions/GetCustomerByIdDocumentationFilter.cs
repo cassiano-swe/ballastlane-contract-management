@@ -20,7 +20,8 @@ public sealed class GetCustomerByIdDocumentationFilter : IOperationFilter
             ["tradeName"] = new OpenApiString("Acme"),
             ["customerType"] = new OpenApiString("Company"),
             ["taxId"] = new OpenApiString("00123456789"),
-            ["email"] = new OpenApiString("contact@acme.example")
+            ["email"] = new OpenApiString("contact@acme.example"),
+            ["version"] = new OpenApiString(CustomerSchemaFilter.ExampleVersion)
         };
     }
 }

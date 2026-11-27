@@ -28,7 +28,7 @@ public class ListCustomersTests
         var result = await new ListCustomersHandler(repository).HandleAsync(source.Token);
 
         Assert.Equal(stored.Select(customer => new ListCustomersOutput(
-            customer.Id, customer.Name, customer.TradeName, customer.CustomerType, customer.TaxId, customer.Email)), result);
+            customer.Id, customer.Name, customer.TradeName, customer.CustomerType, customer.TaxId, customer.Email, customer.Version)), result);
         await repository.Received(1).ListAsync(Arg.Any<CancellationToken>());
         await repository.Received().ListAsync(source.Token);
     }

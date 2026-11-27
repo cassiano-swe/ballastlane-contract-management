@@ -15,7 +15,9 @@ public class CreateCustomerTests
         var repository = Substitute.For<ICustomerRepository>();
         using var source = new CancellationTokenSource();
         var result = await new CreateCustomerHandler(new(), repository).HandleAsync(Valid(), source.Token);
-        await repository.Received(1).CreateAsync(Arg.Is<Customer>(x => x.Id == result.Id && x.Name == "Acme" && x.TaxId == "001" && x.TradeName == "Shop"), source.Token);
+        Assert.NotEqual(Guid.Empty, result.Version);
+        await repository.Received(1).CreateAsync(Arg.Is<Customer>(x => x.Id == result.Id && x.Name == "Acme"
+            && x.TaxId == "001" && x.TradeName == "Shop" && x.Version == result.Version), source.Token);
         Assert.Equal("a@example.com", result.Email);
     }
     [Theory]

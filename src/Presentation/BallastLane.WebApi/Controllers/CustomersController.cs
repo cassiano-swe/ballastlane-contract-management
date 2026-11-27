@@ -25,7 +25,7 @@ public sealed class CustomersController(
     {
         var customers = await listHandler.HandleAsync(cancellationToken);
         return Ok(customers.Select(customer => new ListCustomersResponse(
-            customer.Id, customer.Name, customer.TradeName, customer.CustomerType, customer.TaxId, customer.Email)).ToArray());
+            customer.Id, customer.Name, customer.TradeName, customer.CustomerType, customer.TaxId, customer.Email, customer.Version)).ToArray());
     }
 
     /// <summary>Retrieves a customer by its unique identifier.</summary>
@@ -45,7 +45,7 @@ public sealed class CustomersController(
     {
         var customer = await getByIdHandler.HandleAsync(new(id), cancellationToken);
         return Ok(new GetCustomerByIdResponse(
-            customer.Id, customer.Name, customer.TradeName, customer.CustomerType, customer.TaxId, customer.Email));
+            customer.Id, customer.Name, customer.TradeName, customer.CustomerType, customer.TaxId, customer.Email, customer.Version));
     }
 
     /// <summary>Creates a customer.</summary>
@@ -60,6 +60,6 @@ public sealed class CustomersController(
         var result = await createHandler.HandleAsync(new(request.Name, request.TradeName, request.CustomerType!.Value, request.TaxId, request.Email), cancellationToken);
         var location = Url.Action(nameof(GetById), new { id = result.Id })
             ?? throw new InvalidOperationException("The customer route could not be generated.");
-        return Created(location, new CreateCustomerResponse(result.Id, result.Name, result.TradeName, result.CustomerType, result.TaxId, result.Email));
+        return Created(location, new CreateCustomerResponse(result.Id, result.Name, result.TradeName, result.CustomerType, result.TaxId, result.Email, result.Version));
     }
 }

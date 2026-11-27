@@ -24,9 +24,7 @@ public class ListCustomersTests
         await using var database = new PostgreSqlBuilder().WithImage("postgres:17").Build();
         await database.StartAsync();
         await using var dataSource = NpgsqlDataSource.Create(database.GetConnectionString());
-        var migration = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "001_create_customers.sql"));
-        await using (var command = dataSource.CreateCommand(migration))
-            await command.ExecuteNonQueryAsync();
+        await CustomerMigrations.ApplyAllAsync(dataSource);
         await using var app = Factory(database.GetConnectionString());
         using var client = app.CreateClient();
 
@@ -44,14 +42,18 @@ public class ListCustomersTests
 
         var firstId = Guid.Parse("10000000-0000-0000-0000-000000000001");
         var secondId = Guid.Parse("10000000-0000-0000-0000-000000000002");
+        var firstVersion = Guid.NewGuid();
+        var secondVersion = Guid.NewGuid();
         await using (var command = dataSource.CreateCommand("""
-            INSERT INTO customers (id, name, trade_name, customer_type, tax_id, email)
-            VALUES (@second, 'Acme', 'West', 2, '003', 'west@example.com'),
-                   (@first, 'Acme', 'East', 2, '002', 'east@example.com')
+            INSERT INTO customers (id, name, trade_name, customer_type, tax_id, email, version)
+            VALUES (@second, 'Acme', 'West', 2, '003', 'west@example.com', @secondVersion),
+                   (@first, 'Acme', 'East', 2, '002', 'east@example.com', @firstVersion)
             """))
         {
             command.Parameters.AddWithValue("first", firstId);
             command.Parameters.AddWithValue("second", secondId);
+            command.Parameters.AddWithValue("firstVersion", firstVersion);
+            command.Parameters.AddWithValue("secondVersion", secondVersion);
             await command.ExecuteNonQueryAsync();
         }
 
@@ -61,6 +63,9 @@ public class ListCustomersTests
         AssertCustomer(listed[0], "Acme", "East", "Company", "002", "east@example.com");
         AssertCustomer(listed[1], "Acme", "West", "Company", "003", "west@example.com");
         AssertCustomer(listed[2], "Zulu", null, "Individual", "001'23", "a@example.com");
+        Assert.Equal(firstVersion, listed[0].GetProperty("version").GetGuid());
+        Assert.Equal(secondVersion, listed[1].GetProperty("version").GetGuid());
+        Assert.Equal(posted.GetProperty("version").GetGuid(), listed[2].GetProperty("version").GetGuid());
     }
 
     [Fact]
@@ -81,10 +86,12 @@ public class ListCustomersTests
         Assert.Contains("[]", ok.GetProperty("description").GetString());
         var success = ok.GetProperty("content").GetProperty("application/json");
         Assert.Equal("array", success.GetProperty("schema").GetProperty("type").GetString());
-        Assert.NotEmpty(success.GetProperty("example").EnumerateArray());
+        var example = Assert.Single(success.GetProperty("example").EnumerateArray());
+        Assert.NotEqual(Guid.Empty, example.GetProperty("version").GetGuid());
         var schemas = swagger.RootElement.GetProperty("components").GetProperty("schemas");
-        Assert.True(schemas.GetProperty("ListCustomersResponse").GetProperty("properties")
-            .GetProperty("tradeName").GetProperty("nullable").GetBoolean());
+        var customerProperties = schemas.GetProperty("ListCustomersResponse").GetProperty("properties");
+        Assert.True(customerProperties.GetProperty("tradeName").GetProperty("nullable").GetBoolean());
+        Assert.Equal("uuid", customerProperties.GetProperty("version").GetProperty("format").GetString());
         var customerType = schemas.GetProperty("CustomerType");
         Assert.Equal("string", customerType.GetProperty("type").GetString());
         Assert.Equal(new[] { "Individual", "Company" },
@@ -147,7 +154,7 @@ public class ListCustomersTests
 
     private static void AssertCustomer(JsonElement customer, string name, string? tradeName, string type, string taxId, string email)
     {
-        Assert.Equal(6, customer.EnumerateObject().Count());
+        Assert.Equal(7, customer.EnumerateObject().Count());
         Assert.Equal(name, customer.GetProperty("name").GetString());
         Assert.Equal(tradeName, customer.GetProperty("tradeName").GetString());
         Assert.Equal(type, customer.GetProperty("customerType").GetString());
