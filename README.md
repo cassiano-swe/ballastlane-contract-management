@@ -1,6 +1,6 @@
 # BallastLane
 
-BallastLane is a contract-management interview exercise. The business API supports customer creation, listing, retrieval, update, and deactivation. The User domain provides persistence for the upcoming authentication work. Contract CRUD is TODO. User management and the separate Generative AI Tools assignment are out of scope. The temporary percentage example demonstrates the API architecture.
+BallastLane is a contract-management interview exercise. The business API supports customer creation, listing, retrieval, update, and deactivation. The Identity API authenticates users and issues the access tokens required by Customer operations. Contract CRUD is TODO. User management and the separate Generative AI Tools assignment are out of scope. The temporary percentage example demonstrates the API architecture.
 
 The solution uses .NET 10, ASP.NET Core MVC API controllers, FluentValidation, Npgsql/ADO.NET, JWT bearer validation, Swagger, Angular standalone components and routing, PostgreSQL, and Docker Compose. See [customer business rules](docs/customer-business-rules.md), [architecture](docs/architecture.md), [development guide](docs/development-guide.md), and [testing strategy](docs/testing-strategy.md).
 
@@ -10,16 +10,17 @@ The solution uses .NET 10, ASP.NET Core MVC API controllers, FluentValidation, N
 
 ## Prerequisites and configuration
 
-Install .NET 10 SDK, Node.js 22 and npm, Docker and Docker Compose. Copy `.env.example` to `.env` and replace the database password and JWT signing key with your own local secrets (the JWT signing key must contain at least 32 UTF-8 bytes). Compose automatically loads `.env` from the project directory; values exported in the shell also work. A host-run .NET process does **not** automatically load this file. Supply its configuration separately through environment variables or .NET user secrets. The business API can run in Development without JWT settings for local testing. Its current endpoints are public; without JWT settings it cannot validate tokens, so protected endpoints still require authentication. The identity API and the business API outside Development require JWT settings. When configuring JWT, provide:
+Install .NET 10 SDK, Node.js 22 and npm, Docker and Docker Compose. Copy `.env.example` to `.env` and supply local secrets. The signing key is Base64 text representing at least 32 random bytes. Compose reads `.env` from the project directory. Host-run .NET processes require environment variables or .NET user secrets configured separately. For example, configure both host-run APIs from the same shell:
 
 ```sh
 export Jwt__Issuer='local-issuer'
 export Jwt__Audience='local-audience'
-export Jwt__SigningKey='<your-own-random-secret-at-least-32-UTF8-bytes>'
+export Jwt__SigningKey="$(openssl rand -base64 32)"
+export Jwt__AccessTokenLifetimeSeconds=1800
 export ConnectionStrings__Postgres='Host=localhost;Port=5432;Database=ballastlane;Username=ballastlane;Password=<your-local-password>'
 ```
 
-When both APIs validate tokens, they must use the same issuer, audience and signing key. No token issuer is included. Origins can be supplied through configuration such as `Cors__Origins__0=http://localhost:4200`. Never commit real secrets. The business API rejects partial or invalid JWT settings, and outside Development also rejects missing settings. The identity API always requires valid JWT settings. The data source is created lazily on first use.
+Both APIs require the same issuer, audience and key at startup, including in Development. Replace any older plain-text key in both hosts together. For Compose, assign the output of `openssl rand -base64 32` to `JWT_SIGNING_KEY` in the ignored `.env` file. Never commit a real key. Explicit local CORS origins can be configured with `Cors__Origins__0=http://localhost:4200`.
 
 ## Run with Docker Compose
 
@@ -30,7 +31,7 @@ docker compose ps
 
 The web application is served at `http://localhost:4200`. Its `/business-api/` and `/identity-api/` paths are proxied to the `api` and `identity-api` services on port 8080. The business and identity APIs are also available directly at `http://localhost:5101` and `http://localhost:5102`, respectively. Both APIs use `postgres:5432` inside the Compose network, and use the same JWT settings from `.env`. Compose defaults to Development so the Swagger UIs are available; `ASPNETCORE_ENVIRONMENT` can override this. PostgreSQL and API ports bind only to localhost. The database migration is a separate manual step described below; starting Compose does not apply it.
 
-For the connection string assembled by Compose, avoid semicolons in database values or use a suitably escaped Npgsql connection string configuration. Compose's JWT signing key is only local configuration; it does not issue tokens.
+For the connection string assembled by Compose, avoid semicolons in database values or use a suitably escaped Npgsql connection string configuration.
 
 ## Run applications on the host
 
@@ -53,11 +54,11 @@ Run long-lived commands in separate terminals. The business API is at `http://lo
 
 Built-in logging is configured in each API's appsettings files and can be overridden with environment variables, e.g. `Logging__LogLevel__Default`. Request completion logs contain a route template, status, elapsed time and trace identifier, but no bodies, query strings or authorization data. Handled errors return `application/problem+json` with a trace identifier and generic unexpected-error details. Request cancellation is propagated.
 
-There is no migration runner, authentication workflow, or token issuer. The health checks indicate API process health, not database readiness. The containerized frontend uses Nginx to route its API paths to the Compose services. Docker/Testcontainers requires a working Docker daemon. Future migration scripts must be reviewed and executed through a separately chosen deployment process.
+Migrations run manually. The health checks indicate API process health, not database readiness. The containerized frontend uses Nginx to route its API paths to the Compose services. Docker/Testcontainers requires a working Docker daemon. Future migration scripts must be reviewed and executed through a separately chosen deployment process.
 
 ## Customer creation
 
-`POST /api/customers` creates an Individual or Company. This endpoint is temporarily anonymous and is not intended for production deployment. It returns `201 Created` with a `Location: /api/customers/{id}` header that can be followed to retrieve the new customer.
+`POST /api/customers` creates an Individual or Company. It returns `201 Created` with a `Location: /api/customers/{id}` header that can be followed to retrieve the new customer.
 
 ```json
 {"name":"Acme Corporation","tradeName":"Acme","customerType":"Company","taxId":"00123456789","email":"contact@acme.example"}
@@ -71,13 +72,14 @@ The response adds the generated `id` and `version` to the customer fields. New c
 
 ## Database migrations
 
-Inspect the healthy local Compose PostgreSQL service before applying migrations. On a fresh database, apply all four scripts in order. On an existing database, inspect the schema and apply only pending scripts.
+Inspect the healthy local Compose PostgreSQL service before applying migrations. On a fresh database, apply all five scripts in order. On an existing database, inspect the schema and apply only pending scripts.
 
 ```sh
 docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < database/migrations/001_create_customers.sql
 docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < database/migrations/002_add_customer_version.sql
 docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < database/migrations/003_add_customer_active.sql
 docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < database/migrations/004_create_users.sql
+docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < database/migrations/005_add_customer_authorship.sql
 ```
 
 The second migration adds the seventh customer column and backfills a distinct UUID per existing customer inside one transaction. Verify with `\d customers` in psql that `version` is `uuid NOT NULL` with the `ck_customers_version` check. Compare the row count and the six original columns before and after, and verify that every row has a non-empty version. Coordinate the migration with the API deployment because the old API writes without the column and the new API reads and writes it.
@@ -85,6 +87,8 @@ The second migration adds the seventh customer column and backfills a distinct U
 The third migration adds `active BOOLEAN NOT NULL DEFAULT TRUE` in one transaction. Coordinate a pause in customer writes while verifying the migration. Compare row counts and a deterministic snapshot of the original columns, including `version`, before and after without publishing customer data. Immediately after the first application, verify that all existing rows are active and that the tax ID constraint remains in place. Apply the migration before starting the API that reads `active`. If the column already exists, verify its definition and investigate incompatible schema before proceeding.
 
 The fourth migration creates the `users` table in one transaction. If the table exists, check its definition before deciding whether the migration is pending. On first application, verify all five columns, their types and nullability, the active default, and the primary key, unique email and text check constraints. Compare the existing customer data before and after using a private snapshot.
+
+The fifth migration adds nullable `created_by_user_id` and `updated_by_user_id` to `customers`, with foreign keys to `users.id` that restrict deletion of referenced users. Apply it before deploying the updated WebApi. Existing customers retain null authorship. The API takes the author from the authenticated JWT and writes it with the customer change. The audit fields are available in PostgreSQL and remain outside the HTTP payloads.
 
 ## Customer listing
 
@@ -105,7 +109,7 @@ The fourth migration creates the `users` table in one transaction. If the table 
 ]
 ```
 
-Unexpected failures return `500 Internal Server Error` with generic ProblemDetails and a request trace ID. Anonymous access is temporary and is not intended for production deployment. Use fictional customer data in local demonstrations.
+Unexpected failures return `500 Internal Server Error` with generic ProblemDetails and a request trace ID. Use fictional customer data in local demonstrations.
 
 The repository reads all eight columns in one ordered PostgreSQL query. Listing returns active and inactive customers without filtering or pagination. As the table grows, database sorting, API memory usage, response size, and network transfer can increase.
 
@@ -130,7 +134,7 @@ Errors use `application/problem+json` and include a trace ID. The repository rea
 
 The application generates a `Guid` when creating a customer and persists it as a native PostgreSQL `uuid`. POST and both GET responses expose that persisted token as a JSON string. Repeated reads preserve it, and successful updates replace it.
 
-Anonymous access is temporary and is not intended for production deployment. Test this operation in Development at `/swagger` or inspect its schema at `/swagger/v1/swagger.json`. Run `dotnet test BallastLane.sln` with Docker available to exercise both HTTP and PostgreSQL behavior.
+Test this operation in Development at `/swagger` or inspect its schema at `/swagger/v1/swagger.json`. Run `dotnet test BallastLane.sln` with Docker available to exercise both HTTP and PostgreSQL behavior.
 
 ## Customer update
 
@@ -156,7 +160,7 @@ A successful request returns `200 OK` with the existing seven-field response and
 
 For example, two people can retrieve the same customer at version A and each submit an edit. Both requests can pass the in-memory check. The database compares the identifier and expected version in the same statement that writes the replacement and new version. Once the first write commits, the second cannot match version A, so it receives a conflict and the first edit remains stored. The server cannot know how to reconcile their edits and performs no automatic retry. On a concurrency conflict, retrieve the current state before deciding whether to send another update.
 
-Errors use `application/problem+json` with a `traceId`. The duplicate tax ID type also applies to POST. Access is temporarily anonymous and must be protected before production use. In Development, Swagger UI at `/swagger` and the OpenAPI document at `/swagger/v1/swagger.json` show both conflict examples. Run `dotnet test BallastLane.sln` with Docker to exercise the endpoint and concurrent writes against disposable PostgreSQL.
+Errors use `application/problem+json` with a `traceId`. The duplicate tax ID type also applies to POST. In Development, Swagger UI at `/swagger` and the OpenAPI document at `/swagger/v1/swagger.json` show both conflict examples. Run `dotnet test BallastLane.sln` with Docker to exercise the endpoint and concurrent writes against disposable PostgreSQL.
 
 ## Customer deactivation
 
@@ -178,7 +182,7 @@ A successful transition sets `active` to false and renews the version while reta
 | 409 | Stale version (`urn:ballastlane:customer-concurrency-conflict`) |
 | 500 | Unexpected failure with a generic error message |
 
-Concurrent PUT and DELETE writes that read the same active version compete for that version. The database accepts one write and the other receives 409. GET returns the winning state. Reactivation is outside this feature. Anonymous access is temporary and requires access controls before production. The endpoint is documented in the Development Swagger UI.
+Concurrent PUT and DELETE writes that read the same active version compete for that version. The database accepts one write and the other receives 409. GET returns the winning state. Reactivation is outside this feature. The endpoint is documented in the Development Swagger UI.
 
 ## User persistence
 
@@ -186,4 +190,36 @@ The User domain holds a generated UUID, a trimmed name of up to 200 characters, 
 
 PostgreSQL stores these fields as `id UUID`, `name VARCHAR(200)`, `email VARCHAR(254)`, `password_hash TEXT`, and `active BOOLEAN`. The scoped repository inserts through the existing Npgsql data source and reads by normalized email. The database's `uq_users_email` constraint allows only one insert when concurrent writes use the same normalized email. The application exception for a duplicate contains no submitted values.
 
-Treat password hashes as sensitive. Keep them out of logs, diagnostics and API responses. The next authentication stage will add a demonstration user, password hashing and verification, login, JWT issuance and API authorization. Public registration remains out of scope.
+Treat password hashes as sensitive. Keep them out of logs, diagnostics and API responses. Public registration remains out of scope.
+
+## Backend authentication
+
+After applying migrations, provision the demonstration account **only in an isolated local development database**. The password is publicly known. The seed stores its generated hash and preserves existing accounts with the same email.
+
+```sh
+docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < database/seeds/001_create_demo_user.sql
+```
+
+The demonstration credentials are `demo@ballastlane.example` and `BallastLane@2026!`. Post the email and password to the Identity API, then use its access token on the business API. This example captures the token without printing it. Avoid shell tracing when running it.
+
+```sh
+token="$(curl --silent --show-error --fail http://localhost:5102/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"demo@ballastlane.example","password":"BallastLane@2026!"}' | jq -er '.accessToken')"
+printf 'header = "Authorization: Bearer %s"\n' "$token" |
+  curl --silent --show-error --fail --config - http://localhost:5101/api/customers
+unset token
+```
+
+| Endpoint | Access |
+| --- | --- |
+| Identity API `POST /api/auth/login` | Anonymous |
+| Both APIs `GET /health` | Anonymous |
+| Business API `POST`, `GET`, `PUT`, and `DELETE` Customer operations | Valid Bearer token |
+| Swagger UI and the temporary percentage example | Development only |
+
+The login response returns `accessToken`, `tokenType`, and `expiresIn` with `Cache-Control: no-store`. Invalid input returns 400. Incorrect credentials and inactive or missing accounts return the same 401. Customer requests with missing or invalid tokens return 401 with the Bearer challenge. A valid token can authorize all Customer operations. No role-specific policy is configured.
+
+In Development Swagger, obtain the token from the Identity API at `http://localhost:5102/swagger` and paste just the JWT into **Authorize** on the business API at `http://localhost:5101/swagger`. Use HTTPS outside isolated local development. The two hosts share a symmetric key, so both can technically issue tokens. Tokens expire after the configured lifetime and are not revoked immediately if an account becomes inactive. Login rate limiting is outside this delivery.
+
+Public registration is excluded by the project owner. Review this decision against the original interview requirements. Angular authentication and Contract CRUD are future work.

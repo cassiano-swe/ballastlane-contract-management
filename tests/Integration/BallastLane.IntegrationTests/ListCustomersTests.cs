@@ -25,8 +25,9 @@ public class ListCustomersTests
         await database.StartAsync();
         await using var dataSource = NpgsqlDataSource.Create(database.GetConnectionString());
         await CustomerMigrations.ApplyAllAsync(dataSource);
+        await TestJwt.SeedAuthorAsync(dataSource);
         await using var app = Factory(database.GetConnectionString());
-        using var client = app.CreateClient();
+        using var client = app.CreateAuthenticatedClient();
 
         var empty = await ListAsync(client);
         Assert.Equal(JsonValueKind.Array, empty.ValueKind);
@@ -69,16 +70,16 @@ public class ListCustomersTests
     }
 
     [Fact]
-    public async Task SwaggerDocumentsTheAnonymousCollectionAndItsResponses()
+    public async Task SwaggerDocumentsTheProtectedCollectionAndItsResponses()
     {
         await using var app = Factory("Host=localhost;Database=unused;Username=unused");
-        using var client = app.CreateClient();
+        using var client = app.CreateAuthenticatedClient();
         using var swagger = JsonDocument.Parse(await client.GetStringAsync("/swagger/v1/swagger.json"));
         var resource = swagger.RootElement.GetProperty("paths").GetProperty("/api/customers");
         Assert.True(resource.TryGetProperty("post", out _));
         var get = resource.GetProperty("get");
         Assert.Equal("Retrieves all registered customers.", get.GetProperty("summary").GetString());
-        Assert.False(get.TryGetProperty("security", out _));
+        Assert.True(Assert.Single(get.GetProperty("security").EnumerateArray()).TryGetProperty("Bearer", out _));
         Assert.False(get.TryGetProperty("requestBody", out _));
         Assert.False(get.TryGetProperty("parameters", out _));
         var responses = get.GetProperty("responses");
@@ -114,7 +115,7 @@ public class ListCustomersTests
                 services.AddScoped<ICustomerRepository, FailingRepository>();
             });
         });
-        using var client = app.CreateClient();
+        using var client = app.CreateAuthenticatedClient();
         using var response = await client.GetAsync("/api/customers");
 
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
@@ -140,9 +141,9 @@ public class ListCustomersTests
                 new Dictionary<string, string?>
                 {
                     ["ConnectionStrings:Postgres"] = connectionString,
-                    ["Jwt:Issuer"] = "",
-                    ["Jwt:Audience"] = "",
-                    ["Jwt:SigningKey"] = ""
+                    ["Jwt:Issuer"] = TestJwt.Issuer,
+                    ["Jwt:Audience"] = TestJwt.Audience,
+                    ["Jwt:SigningKey"] = TestJwt.SigningKey
                 }));
         });
 
@@ -166,9 +167,9 @@ public class ListCustomersTests
 
     private sealed class FailingRepository : ICustomerRepository
     {
-        public Task<bool> DeactivateAsync(Guid id, Guid expectedVersion, Guid newVersion, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task<bool> UpdateAsync(Customer customer, Guid expectedVersion, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task CreateAsync(Customer customer, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<bool> DeactivateAsync(Guid id, Guid expectedVersion, Guid newVersion, Guid authorId, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<bool> UpdateAsync(Customer customer, Guid expectedVersion, Guid authorId, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task CreateAsync(Customer customer, Guid authorId, CancellationToken cancellationToken) => throw new NotSupportedException();
 
         public Task<IReadOnlyList<Customer>> ListAsync(CancellationToken cancellationToken) =>
             throw new InvalidOperationException("test-sensitive-detail");

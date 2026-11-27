@@ -11,6 +11,7 @@ namespace BallastLane.Application.UnitTests;
 
 public class DeleteCustomerTests
 {
+    private static readonly Guid AuthorId = Guid.NewGuid();
     private readonly ICustomerRepository repository = Substitute.For<ICustomerRepository>();
 
     [Theory]
@@ -22,7 +23,7 @@ public class DeleteCustomerTests
         var input = new DeleteCustomerInput(emptyId ? Guid.Empty : Guid.NewGuid(),
             emptyVersion ? Guid.Empty : Guid.NewGuid());
 
-        await Assert.ThrowsAsync<ValidationException>(() => new DeleteCustomerHandler(new(), repository).HandleAsync(input, default));
+        await Assert.ThrowsAsync<ValidationException>(() => new DeleteCustomerHandler(new(), repository).HandleAsync(input, AuthorId, default));
         Assert.Empty(repository.ReceivedCalls());
     }
 
@@ -39,21 +40,21 @@ public class DeleteCustomerTests
         using var cancellation = new CancellationTokenSource();
         var token = cancellation.Token;
         repository.GetByIdAsync(id, token).Returns(customer);
-        repository.DeactivateAsync(id, version, Arg.Any<Guid>(), token).Returns(true);
+        repository.DeactivateAsync(id, version, Arg.Any<Guid>(), AuthorId, token).Returns(true);
         var handler = new DeleteCustomerHandler(new(), repository);
         var input = new DeleteCustomerInput(id, stale ? Guid.NewGuid() : version);
 
         if (stale)
-            await Assert.ThrowsAsync<CustomerConcurrencyException>(() => handler.HandleAsync(input, token));
+            await Assert.ThrowsAsync<CustomerConcurrencyException>(() => handler.HandleAsync(input, AuthorId, token));
         else
-            await handler.HandleAsync(input, token);
+            await handler.HandleAsync(input, AuthorId, token);
 
         await repository.Received(1).GetByIdAsync(id, token);
         if (active && !stale)
         {
             Assert.False(customer.Active);
             Assert.NotEqual(version, customer.Version);
-            await repository.Received(1).DeactivateAsync(id, version, customer.Version, token);
+            await repository.Received(1).DeactivateAsync(id, version, customer.Version, AuthorId, token);
             Assert.Equal(2, repository.ReceivedCalls().Count());
         }
         else
@@ -73,16 +74,16 @@ public class DeleteCustomerTests
         using var cancellation = new CancellationTokenSource();
         var token = cancellation.Token;
         repository.GetByIdAsync(input.Id, token).Returns(customer, disappeared ? null : customer);
-        repository.DeactivateAsync(input.Id, input.Version, Arg.Any<Guid>(), token).Returns(false);
+        repository.DeactivateAsync(input.Id, input.Version, Arg.Any<Guid>(), AuthorId, token).Returns(false);
         var handler = new DeleteCustomerHandler(new(), repository);
 
         if (disappeared)
-            await Assert.ThrowsAsync<CustomerNotFoundException>(() => handler.HandleAsync(input, token));
+            await Assert.ThrowsAsync<CustomerNotFoundException>(() => handler.HandleAsync(input, AuthorId, token));
         else
-            await Assert.ThrowsAsync<CustomerConcurrencyException>(() => handler.HandleAsync(input, token));
+            await Assert.ThrowsAsync<CustomerConcurrencyException>(() => handler.HandleAsync(input, AuthorId, token));
 
         await repository.Received(2).GetByIdAsync(input.Id, token);
-        await repository.Received(1).DeactivateAsync(input.Id, input.Version, customer.Version, token);
+        await repository.Received(1).DeactivateAsync(input.Id, input.Version, customer.Version, AuthorId, token);
         Assert.Equal(3, repository.ReceivedCalls().Count());
     }
 
@@ -92,7 +93,7 @@ public class DeleteCustomerTests
         var input = new DeleteCustomerInput(Guid.NewGuid(), Guid.NewGuid());
         repository.GetByIdAsync(input.Id, default).Returns((Customer?)null);
 
-        await Assert.ThrowsAsync<CustomerNotFoundException>(() => new DeleteCustomerHandler(new(), repository).HandleAsync(input, default));
+        await Assert.ThrowsAsync<CustomerNotFoundException>(() => new DeleteCustomerHandler(new(), repository).HandleAsync(input, AuthorId, default));
         Assert.Single(repository.ReceivedCalls());
     }
 
@@ -103,10 +104,10 @@ public class DeleteCustomerTests
         var input = new DeleteCustomerInput(customer.Id, customer.Version);
         var failure = new InvalidOperationException("Repository failure.");
         repository.GetByIdAsync(input.Id, default).Returns(customer);
-        repository.DeactivateAsync(input.Id, input.Version, Arg.Any<Guid>(), default).Returns(Task.FromException<bool>(failure));
+        repository.DeactivateAsync(input.Id, input.Version, Arg.Any<Guid>(), AuthorId, default).Returns(Task.FromException<bool>(failure));
 
         Assert.Same(failure, await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            new DeleteCustomerHandler(new(), repository).HandleAsync(input, default)));
+            new DeleteCustomerHandler(new(), repository).HandleAsync(input, AuthorId, default)));
         Assert.Equal(2, repository.ReceivedCalls().Count());
     }
 }

@@ -26,17 +26,16 @@ public class ApiTests
         if (provider is not null) builder.ConfigureLogging(logging => logging.AddProvider(provider));
         builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["Jwt:Issuer"] = configureJwt ? "tests" : "", ["Jwt:Audience"] = configureJwt ? "tests" : "", ["Jwt:SigningKey"] = configureJwt ? Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N") : "",
+            ["Jwt:Issuer"] = configureJwt ? TestJwt.Issuer : "", ["Jwt:Audience"] = configureJwt ? TestJwt.Audience : "", ["Jwt:SigningKey"] = configureJwt ? TestJwt.SigningKey : "",
             ["ConnectionStrings:Postgres"] = "Host=localhost;Database=test;Username=test;Password=test"
         }));
     });
 
-    [Fact] public async Task BusinessApiWorksInDevelopmentWithoutJwtConfiguration()
+    [Fact] public async Task BusinessApiRejectsMissingJwtConfigurationInDevelopment()
     {
         await using var app = Factory<business::Program>(configureJwt: false);
-        var client = app.CreateClient();
-        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/swagger/v1/swagger.json")).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/api/examples/calculate-percentage", new { value = 200, percentage = 25 })).StatusCode);
+        var error = Assert.Throws<InvalidOperationException>(() => app.CreateClient());
+        Assert.Contains("Jwt:Issuer", error.Message);
     }
 
     [Fact] public async Task BusinessApiRejectsMissingJwtConfigurationOutsideDevelopment()
@@ -88,14 +87,15 @@ public class ApiTests
     [Fact] public async Task ExampleIsUnavailableInProduction()
     {
         await using var app = Factory<business::Program>("Production");
-        Assert.Equal(HttpStatusCode.NotFound, (await app.CreateClient().PostAsJsonAsync("/api/examples/calculate-percentage", new { value = 1, percentage = 1 })).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await app.CreateAuthenticatedClient().PostAsJsonAsync("/api/examples/calculate-percentage", new { value = 1, percentage = 1 })).StatusCode);
     }
 
     [Fact] public async Task UnexpectedFailureReturnsSafeTraceableProblem()
     {
         using var logs = new TestLogProvider();
         await using var app = Factory<business::Program>(provider: logs);
-        var response = await app.CreateClient().GetAsync("/__test_exception");
+        using var client = app.CreateAuthenticatedClient();
+        using var response = await client.GetAsync("/__test_exception");
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
         var body = await response.Content.ReadAsStringAsync();

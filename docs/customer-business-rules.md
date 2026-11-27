@@ -13,14 +13,18 @@
 
 For example, a request with `customerType: "Individual"` and a nonblank `tradeName` is invalid. The API responds with HTTP 400 and a `ValidationProblemDetails` whose `detail` explains that trade names are only allowed for companies; field errors are also available in `errors`. An invalid JSON value or missing field is reported in `detail` without including the submitted value. Duplicate tax IDs return 409; unexpected failures return 500 with generic details. Successful creation returns 201 and a `Location` header for the customer resource URL at `GET /api/customers/{id}`.
 
-Customer creation is temporarily anonymous and is not intended for production until access is protected.
+All Customer operations require a valid Bearer access token. The API challenges unauthorized requests with HTTP 401 before running Customer business logic.
+
+Customer writes require an authenticated JWT subject that is a non-empty UUID. Creation records that user as the creator and leaves last-modified authorship null. Updates and soft deletion write the last-modified author and preserve the creator. Legacy rows keep a null creator and gain a last-modified author on the first successful edit or soft deletion. Authorship records who made the change. Any authenticated account with a valid subject may manage any customer, and HTTP inputs and outputs have no audit fields.
 
 ## Customer update business rules
 
 `PUT /api/customers/{id}` replaces all editable fields using the same normalization and validation rules as creation. The route supplies the immutable, non-empty customer ID. All editable fields are required except `tradeName`. An omitted, null, or blank trade name clears the existing value. An Individual cannot have a nonblank trade name.
 
-The request requires a non-empty version UUID from a previous customer response. A successful update returns the existing seven-field response with a different version, even when the editable values are unchanged. PUT preserves activation status and accepts edits to inactive customers. A customer may retain its own tax ID. A tax ID already used by another customer and an outdated version are separate HTTP 409 conflicts. Validation and rejected writes do not change the stored values or version. Customer update is temporarily anonymous.
+The request requires a non-empty version UUID from a previous customer response. A successful update returns the existing seven-field response with a different version, even when the editable values are unchanged. PUT preserves activation status and accepts edits to inactive customers. A customer may retain its own tax ID. A tax ID already used by another customer and an outdated version are separate HTTP 409 conflicts. Validation and rejected writes do not change the stored values or version.
 
 ## Customer deactivation business rules
 
-`DELETE /api/customers/{id}?version={version}` requires two non-empty UUIDs and returns 204 with an empty body after a successful deactivation. The row, identifier, business fields and tax ID reservation are retained. A state transition replaces the version. Repeating DELETE with the latest inactive version returns 204 and preserves that version. A stale token returns 409 for active and inactive customers, and a missing customer returns 404. The GET collection and GET by ID continue to return inactive customers. Reactivation is outside this use case. Anonymous mutation endpoints are temporary and require access controls before production.
+`DELETE /api/customers/{id}?version={version}` requires two non-empty UUIDs and returns 204 with an empty body after a successful deactivation. The row, identifier, business fields and tax ID reservation are retained. A state transition replaces the version. Repeating DELETE with the latest inactive version returns 204 and preserves that version. A stale token returns 409 for active and inactive customers, and a missing customer returns 404. The GET collection and GET by ID continue to return inactive customers. Reactivation is outside this use case.
+
+A version conflict and an already-inactive DELETE that performs no write both preserve the previously recorded authors.

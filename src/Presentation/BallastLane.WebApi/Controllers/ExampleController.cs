@@ -1,6 +1,7 @@
 using BallastLane.Application.UseCases.Examples;
 using BallastLane.WebApi.Models.Requests;
 using BallastLane.WebApi.Models.Responses;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ActionConstraints;
 
@@ -10,6 +11,7 @@ namespace BallastLane.WebApi.Controllers;
 [ApiController]
 [Route("api/examples")]
 [DevelopmentOnly]
+[AllowAnonymous]
 public sealed class ExampleController(CalculatePercentageHandler handler) : ControllerBase
 {
     /// <summary>Calculates a percentage amount as a temporary architectural example.</summary>

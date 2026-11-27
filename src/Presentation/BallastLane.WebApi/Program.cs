@@ -1,4 +1,3 @@
-using System.Text;
 using BallastLane.Application.UseCases.Customers.CreateCustomer;
 using BallastLane.Application.UseCases.Customers.DeleteCustomer;
 using BallastLane.Application.UseCases.Customers.GetCustomerById;
@@ -6,15 +5,15 @@ using BallastLane.Application.UseCases.Customers.ListCustomers;
 using BallastLane.Application.UseCases.Customers.UpdateCustomer;
 using Microsoft.AspNetCore.Mvc;
 using BallastLane.Infrastructure;
+using BallastLane.Infrastructure.Security;
 using BallastLane.WebApi.Middleware;
 using BallastLane.WebApi.Extensions;
 using BallastLane.Application.UseCases.Examples;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
-string? issuer = null, audience = null, key = null;
+builder.Services.AddSingleton(service => JwtSettings.Load(service.GetRequiredService<IConfiguration>()));
 builder.Services.AddControllers().AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new CustomerTypeJsonConverter()));
 builder.Services.Configure<ApiBehaviorOptions>(options => options.InvalidModelStateResponseFactory = context =>
 {
@@ -66,13 +65,15 @@ builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddScoped<CalculatePercentageValidator>();
 builder.Services.AddScoped<CalculatePercentageHandler>();
 builder.Services.AddCors(options => options.AddDefaultPolicy(policy => { var origins = builder.Configuration.GetSection("Cors:Origins").Get<string[]>() ?? []; if (origins.Length > 0) policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod(); }));
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
+builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme).Configure<JwtSettings>((options, jwt) =>
 {
-    // With no development configuration, the default bearer options cannot validate tokens.
-    if (key is null) return;
-    options.TokenValidationParameters = new TokenValidationParameters { ValidateIssuer = true, ValidIssuer = issuer, ValidateAudience = true, ValidAudience = audience, ValidateIssuerSigningKey = true, IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)), ValidateLifetime = true, RequireExpirationTime = true };
+    options.TokenValidationParameters = jwt.CreateValidationParameters();
+    options.MapInboundClaims = false;
+    options.IncludeErrorDetails = false;
 });
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorizationBuilder().SetFallbackPolicy(
+    new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -87,22 +88,31 @@ builder.Services.AddSwaggerGen(options =>
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme { Type = SecuritySchemeType.Http, Scheme = "bearer", BearerFormat = "JWT" });
 });
 var app = builder.Build();
-var jwt = app.Configuration.GetSection("Jwt");
-issuer = jwt["Issuer"];
-audience = jwt["Audience"];
-key = jwt["SigningKey"];
-var noJwtConfiguration = string.IsNullOrWhiteSpace(issuer) && string.IsNullOrWhiteSpace(audience) && string.IsNullOrWhiteSpace(key);
-if (app.Environment.IsDevelopment() && noJwtConfiguration)
-    key = null;
-else if (string.IsNullOrWhiteSpace(issuer) || string.IsNullOrWhiteSpace(audience) || string.IsNullOrWhiteSpace(key) || Encoding.UTF8.GetByteCount(key) < 32)
-    throw new InvalidOperationException("Configure Jwt:Issuer, Jwt:Audience and a Jwt:SigningKey of at least 32 UTF-8 bytes.");
+_ = app.Services.GetRequiredService<JwtSettings>();
 app.UseMiddleware<RequestLoggingMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
+if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); }
 app.UseRouting();
 app.UseCors();
+app.UseStatusCodePages(async statusContext =>
+{
+    var context = statusContext.HttpContext;
+    var status = context.Response.StatusCode;
+    if (status is not (StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden))
+        return;
+
+    var problem = new ProblemDetails
+    {
+        Status = status,
+        Title = status == StatusCodes.Status401Unauthorized ? "Authentication required" : "Access denied",
+        Instance = context.Request.Path
+    };
+    problem.Extensions["traceId"] = context.TraceIdentifier;
+    await context.Response.WriteAsJsonAsync(problem, options: null, contentType: "application/problem+json",
+        cancellationToken: context.RequestAborted);
+});
 app.UseAuthentication();
 app.UseAuthorization();
-if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); }
 app.MapControllers();
 app.MapHealthChecks("/health").AllowAnonymous();
 app.Run();

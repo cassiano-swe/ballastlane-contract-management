@@ -11,6 +11,7 @@ namespace BallastLane.Application.UnitTests;
 
 public class UpdateCustomerTests
 {
+    private static readonly Guid AuthorId = Guid.NewGuid();
     private readonly ICustomerRepository repository = Substitute.For<ICustomerRepository>();
     private readonly Customer customer = new("Old", null, CustomerType.Individual, "001", "old@example.com");
 
@@ -23,14 +24,14 @@ public class UpdateCustomerTests
         using var source = new CancellationTokenSource();
         var input = Input;
         repository.GetByIdAsync(customer.Id, source.Token).Returns(customer);
-        repository.UpdateAsync(customer, input.Version, source.Token).Returns(true);
+        repository.UpdateAsync(customer, input.Version, AuthorId, source.Token).Returns(true);
 
-        var result = await Handler.HandleAsync(input, source.Token);
+        var result = await Handler.HandleAsync(input, AuthorId, source.Token);
 
         Assert.Equal(new UpdateCustomerOutput(customer.Id, "New", "Shop", CustomerType.Company, "001'23", "new@example.com", customer.Version), result);
         Assert.NotEqual(input.Version, result.Version);
         await repository.Received(1).GetByIdAsync(customer.Id, source.Token);
-        await repository.Received(1).UpdateAsync(customer, input.Version, source.Token);
+        await repository.Received(1).UpdateAsync(customer, input.Version, AuthorId, source.Token);
         Assert.Equal(2, repository.ReceivedCalls().Count());
     }
 
@@ -57,7 +58,7 @@ public class UpdateCustomerTests
 
         foreach (var input in invalid)
         {
-            var failure = await Assert.ThrowsAsync<ValidationException>(() => Handler.HandleAsync(input, default));
+            var failure = await Assert.ThrowsAsync<ValidationException>(() => Handler.HandleAsync(input, AuthorId, default));
             Assert.Contains(failure.Errors, error => error.PropertyName == property);
         }
         Assert.Empty(repository.ReceivedCalls());
@@ -67,7 +68,7 @@ public class UpdateCustomerTests
     public async Task MissingCustomerDoesNotWrite()
     {
         repository.GetByIdAsync(customer.Id, default).Returns((Customer?)null);
-        await Assert.ThrowsAsync<CustomerNotFoundException>(() => Handler.HandleAsync(Input, default));
+        await Assert.ThrowsAsync<CustomerNotFoundException>(() => Handler.HandleAsync(Input, AuthorId, default));
         Assert.Single(repository.ReceivedCalls());
     }
 
@@ -76,7 +77,7 @@ public class UpdateCustomerTests
     {
         var version = customer.Version;
         repository.GetByIdAsync(customer.Id, default).Returns(customer);
-        await Assert.ThrowsAsync<CustomerConcurrencyException>(() => Handler.HandleAsync(Input with { Version = Guid.NewGuid() }, default));
+        await Assert.ThrowsAsync<CustomerConcurrencyException>(() => Handler.HandleAsync(Input with { Version = Guid.NewGuid() }, AuthorId, default));
         Assert.Equal(("Old", version), (customer.Name, customer.Version));
         Assert.Single(repository.ReceivedCalls());
     }
@@ -89,15 +90,15 @@ public class UpdateCustomerTests
         using var source = new CancellationTokenSource();
         var input = Input;
         repository.GetByIdAsync(customer.Id, source.Token).Returns(customer, stillExists ? customer : null);
-        repository.UpdateAsync(customer, input.Version, source.Token).Returns(false);
+        repository.UpdateAsync(customer, input.Version, AuthorId, source.Token).Returns(false);
 
         if (stillExists)
-            await Assert.ThrowsAsync<CustomerConcurrencyException>(() => Handler.HandleAsync(input, source.Token));
+            await Assert.ThrowsAsync<CustomerConcurrencyException>(() => Handler.HandleAsync(input, AuthorId, source.Token));
         else
-            await Assert.ThrowsAsync<CustomerNotFoundException>(() => Handler.HandleAsync(input, source.Token));
+            await Assert.ThrowsAsync<CustomerNotFoundException>(() => Handler.HandleAsync(input, AuthorId, source.Token));
 
         await repository.Received(2).GetByIdAsync(customer.Id, source.Token);
-        await repository.Received(1).UpdateAsync(customer, input.Version, source.Token);
+        await repository.Received(1).UpdateAsync(customer, input.Version, AuthorId, source.Token);
         Assert.Equal(3, repository.ReceivedCalls().Count());
     }
 
@@ -115,9 +116,9 @@ public class UpdateCustomerTests
         };
         var input = Input;
         repository.GetByIdAsync(customer.Id, default).Returns(customer);
-        repository.UpdateAsync(customer, input.Version, default).Returns(Task.FromException<bool>(failure));
+        repository.UpdateAsync(customer, input.Version, AuthorId, default).Returns(Task.FromException<bool>(failure));
 
-        Assert.Same(failure, await Record.ExceptionAsync(() => Handler.HandleAsync(input, default)));
+        Assert.Same(failure, await Record.ExceptionAsync(() => Handler.HandleAsync(input, AuthorId, default)));
         Assert.Equal(2, repository.ReceivedCalls().Count());
     }
 }

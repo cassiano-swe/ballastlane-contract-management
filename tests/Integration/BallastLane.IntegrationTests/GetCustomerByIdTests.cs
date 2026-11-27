@@ -28,16 +28,17 @@ public class GetCustomerByIdTests
         var connectionString = database.GetConnectionString();
         await using var dataSource = NpgsqlDataSource.Create(connectionString);
         await CustomerMigrations.ApplyAllAsync(dataSource);
+        await TestJwt.SeedAuthorAsync(dataSource);
 
         var id = Guid.NewGuid();
         var version = Guid.NewGuid();
         var repository = new CustomerRepository(dataSource);
         await repository.CreateAsync(Customer.Reconstitute(id, "Alex Taylor", null, CustomerType.Individual,
-            "001'23", "alex@example.com", version, false), default);
+            "001'23", "alex@example.com", version, false), TestJwt.UserId, default);
         using var logs = new TestLogProvider();
         await using var app = Factory(connectionString).WithWebHostBuilder(builder =>
             builder.ConfigureLogging(logging => logging.AddProvider(logs)));
-        using var client = app.CreateClient();
+        using var client = app.CreateAuthenticatedClient();
 
         using var created = await client.PostAsJsonAsync("/api/customers",
             new { name = "Acme", tradeName = "Shop", customerType = "Company", taxId = "002", email = "a@example.com" });
@@ -92,7 +93,7 @@ public class GetCustomerByIdTests
         await using var app = Factory().WithWebHostBuilder(builder =>
             builder.ConfigureServices(services => services.RemoveAll<ICustomerRepository>()
                 .AddScoped<ICustomerRepository, FailingRepository>()));
-        using var client = app.CreateClient();
+        using var client = app.CreateAuthenticatedClient();
         using var response = await client.GetAsync($"/api/customers/{id}");
         var problem = await ReadProblem(response, HttpStatusCode.BadRequest, $"/api/customers/{id}");
         Assert.Equal(message, problem.GetProperty("detail").GetString());
@@ -111,7 +112,7 @@ public class GetCustomerByIdTests
             builder.ConfigureServices(services => services.RemoveAll<ICustomerRepository>()
                 .AddScoped<ICustomerRepository, FailingRepository>());
         });
-        using var client = app.CreateClient();
+        using var client = app.CreateAuthenticatedClient();
         var path = $"/api/customers/{Guid.NewGuid()}";
         using var response = await client.GetAsync(path);
         var problem = await ReadProblem(response, HttpStatusCode.InternalServerError, path);
@@ -121,18 +122,18 @@ public class GetCustomerByIdTests
     }
 
     [Fact]
-    public async Task SwaggerDocumentsTheAnonymousByIdOperation()
+    public async Task SwaggerDocumentsTheProtectedByIdOperation()
     {
         await using var app = Factory();
-        using var client = app.CreateClient();
+        using var client = app.CreateAuthenticatedClient();
         using var swagger = JsonDocument.Parse(await client.GetStringAsync("/swagger/v1/swagger.json"));
         var paths = swagger.RootElement.GetProperty("paths");
         Assert.True(paths.GetProperty("/api/customers").TryGetProperty("post", out _));
         Assert.True(paths.GetProperty("/api/customers").TryGetProperty("get", out _));
         var operation = paths.GetProperty("/api/customers/{id}").GetProperty("get");
         Assert.Equal("Retrieves a customer by its unique identifier.", operation.GetProperty("summary").GetString());
-        Assert.Contains("Anonymous access is temporary", operation.GetProperty("description").GetString());
-        Assert.False(operation.TryGetProperty("security", out _));
+        Assert.Contains("Inactive customers remain retrievable", operation.GetProperty("description").GetString());
+        Assert.True(Assert.Single(operation.GetProperty("security").EnumerateArray()).TryGetProperty("Bearer", out _));
         Assert.False(operation.TryGetProperty("requestBody", out _));
         var parameter = Assert.Single(operation.GetProperty("parameters").EnumerateArray());
         Assert.Equal("id", parameter.GetProperty("name").GetString());
@@ -167,9 +168,9 @@ public class GetCustomerByIdTests
             builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:Postgres"] = connectionString,
-                ["Jwt:Issuer"] = "",
-                ["Jwt:Audience"] = "",
-                ["Jwt:SigningKey"] = ""
+                ["Jwt:Issuer"] = TestJwt.Issuer,
+                ["Jwt:Audience"] = TestJwt.Audience,
+                ["Jwt:SigningKey"] = TestJwt.SigningKey
             }));
         });
 
@@ -205,9 +206,9 @@ public class GetCustomerByIdTests
 
     private sealed class FailingRepository : ICustomerRepository
     {
-        public Task<bool> DeactivateAsync(Guid id, Guid expectedVersion, Guid newVersion, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task<bool> UpdateAsync(Customer customer, Guid expectedVersion, CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task CreateAsync(Customer customer, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<bool> DeactivateAsync(Guid id, Guid expectedVersion, Guid newVersion, Guid authorId, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<bool> UpdateAsync(Customer customer, Guid expectedVersion, Guid authorId, CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task CreateAsync(Customer customer, Guid authorId, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<IReadOnlyList<Customer>> ListAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<Customer?> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("test-sensitive-detail");
