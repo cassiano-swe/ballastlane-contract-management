@@ -49,3 +49,5 @@ graph LR
 The example is temporary and has no database dependency. See the development guide for removal.
 
 Customer creation uses a domain entity with six properties and a focused application handler and repository interface. Infrastructure performs a parameterized Npgsql insert; PostgreSQL's named unique constraint resolves concurrent duplicate tax IDs, which the API maps to 409. MVC and application validation return traceable ProblemDetails. The anonymous endpoint is temporary and must be secured before production. The resource URI in Location is reserved for a future GET operation.
+
+Customer listing uses an input-free application handler and the same customer repository and Npgsql data source. The repository materializes customers from one query ordered by name and ID. Domain reconstitution preserves persisted identifiers and text. The handler maps entities to immutable application outputs, and the controller maps those outputs to a response array. The request cancellation token reaches the database reader. Existing middleware handles unexpected errors and request logging. Anonymous access is temporary.

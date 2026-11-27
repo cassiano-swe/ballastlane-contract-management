@@ -1,6 +1,6 @@
 # BallastLane
 
-BallastLane is a contract-management interview exercise. Customer creation is implemented; Contract and user management are not implemented. The temporary percentage example is not a business requirement. The separate Generative AI Tools assignment is out of scope.
+BallastLane is a contract-management interview exercise. The business API supports customer creation and listing. Contract management, user management, and the separate Generative AI Tools assignment are out of scope. The temporary percentage example demonstrates the API architecture.
 
 The solution uses .NET 10, ASP.NET Core MVC API controllers, FluentValidation, Npgsql/ADO.NET, JWT bearer validation, Swagger, Angular standalone components and routing, PostgreSQL, and Docker Compose. See [customer business rules](docs/customer-business-rules.md), [architecture](docs/architecture.md), [development guide](docs/development-guide.md), and [testing strategy](docs/testing-strategy.md).
 
@@ -57,7 +57,7 @@ There is no migration runner, authentication workflow, or token issuer. The heal
 
 ## Customer creation
 
-`POST /api/customers` creates an Individual or Company. This endpoint is temporarily anonymous and is not intended for production deployment. It returns `201 Created` with a `Location: /api/customers/{id}` header; the corresponding GET endpoint does not exist yet.
+`POST /api/customers` creates an Individual or Company. This endpoint is temporarily anonymous and is not intended for production deployment. It returns `201 Created` with a `Location: /api/customers/{id}` header reserved for a future customer-by-ID endpoint.
 
 ```json
 {"name":"Acme Corporation","tradeName":"Acme","customerType":"Company","taxId":"00123456789","email":"contact@acme.example"}
@@ -73,4 +73,25 @@ docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "
 
 The shell variables must contain the configured Compose database user and database name. Verify with `\d customers` in psql. The migration creates the six customer columns, a primary key, a unique tax ID constraint, and checks for customer type, trade name and required text. It does not modify an existing table. PostgreSQL resolves concurrent duplicates atomically.
 
-In Development, Swagger UI is available at `/swagger`; the JSON document is at `/swagger/v1/swagger.json`. Run `dotnet test BallastLane.sln` for unit and integration tests; Docker is required for isolated PostgreSQL integration tests. No customer retrieval, modification, deletion, or authentication workflow is included.
+## Customer listing
+
+`GET /api/customers` returns `200 OK` with a JSON array containing every customer, ordered by name and then ID in ascending order. It accepts no request body or query parameters. An empty table returns `[]`. The response preserves persisted IDs and tax IDs, including leading zeros. `customerType` is `Individual` or `Company`, and `tradeName` can be null.
+
+```json
+[
+  {
+    "id": "6d8df8a5-8ef2-4c6e-90f5-1dc89e923c17",
+    "name": "Alex Taylor",
+    "tradeName": null,
+    "customerType": "Individual",
+    "taxId": "00123456789",
+    "email": "alex@example.com"
+  }
+]
+```
+
+Unexpected failures return `500 Internal Server Error` with generic ProblemDetails and a request trace ID. Anonymous access is temporary and is not intended for production deployment. Use fictional customer data in local demonstrations.
+
+The repository reads the six columns in one ordered PostgreSQL query. Listing retrieves all rows without filtering or pagination. As the table grows, database sorting, API memory usage, response size, and network transfer can increase.
+
+In Development, use `/swagger` for Swagger UI and `/swagger/v1/swagger.json` for the OpenAPI document. Run `dotnet test BallastLane.sln` for unit and integration tests. The PostgreSQL integration tests require Docker and use disposable databases.
