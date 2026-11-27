@@ -1,5 +1,6 @@
 using System.Text;
 using BallastLane.Application.UseCases.Customers.CreateCustomer;
+using BallastLane.Application.UseCases.Customers.ListCustomers;
 using Microsoft.AspNetCore.Mvc;
 using BallastLane.Infrastructure;
 using BallastLane.WebApi.Middleware;
@@ -29,6 +30,7 @@ builder.Services.Configure<ApiBehaviorOptions>(options => options.InvalidModelSt
 });
 builder.Services.AddScoped<CreateCustomerValidator>();
 builder.Services.AddScoped<CreateCustomerHandler>();
+builder.Services.AddScoped<ListCustomersHandler>();
 builder.Services.AddProblemDetails();
 builder.Services.AddHealthChecks();
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -43,7 +45,16 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
 });
 builder.Services.AddAuthorization();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(options => { options.SchemaFilter<CustomerSchemaFilter>(); options.DocumentFilter<HealthDocumentationFilter>(); options.OperationFilter<AuthorizationDocumentationFilter>(); options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, $"{typeof(Program).Assembly.GetName().Name}.xml")); options.SwaggerDoc("v1", new OpenApiInfo { Title = "BallastLane Business API", Version = "v1" }); options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme { Type = SecuritySchemeType.Http, Scheme = "bearer", BearerFormat = "JWT" }); });
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SchemaFilter<CustomerSchemaFilter>();
+    options.DocumentFilter<HealthDocumentationFilter>();
+    options.OperationFilter<AuthorizationDocumentationFilter>();
+    options.OperationFilter<ListCustomersDocumentationFilter>();
+    options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, $"{typeof(Program).Assembly.GetName().Name}.xml"));
+    options.SwaggerDoc("v1", new OpenApiInfo { Title = "BallastLane Business API", Version = "v1" });
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme { Type = SecuritySchemeType.Http, Scheme = "bearer", BearerFormat = "JWT" });
+});
 var app = builder.Build();
 var jwt = app.Configuration.GetSection("Jwt");
 issuer = jwt["Issuer"];
