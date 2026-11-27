@@ -88,6 +88,34 @@ public class AdditionalMiddlewareTests
         Assert.Empty(logger.Entries);
     }
 
+    [Theory]
+    [InlineData(true, "urn:ballastlane:customer-concurrency-conflict", "The customer has changed since it was retrieved. Retrieve the latest customer state before attempting the operation again.")]
+    [InlineData(false, "urn:ballastlane:customer-duplicate-tax-id", "A customer with the provided tax identifier already exists.")]
+    public async Task CustomerConflictsProduceDistinctSafeProblems(bool concurrency, string type, string detail)
+    {
+        var context = new DefaultHttpContext { TraceIdentifier = "conflict-trace" };
+        context.Request.Path = "/api/customers/10000000-0000-0000-0000-000000000001";
+        using var body = new MemoryStream();
+        context.Response.Body = body;
+        var logger = new CaptureLogger<ExceptionHandlingMiddleware>();
+        Exception exception = concurrency ? new CustomerConcurrencyException() : new CustomerAlreadyExistsException();
+        var middleware = new ExceptionHandlingMiddleware(_ => throw exception, logger);
+
+        await middleware.InvokeAsync(context);
+
+        Assert.Equal(409, context.Response.StatusCode);
+        Assert.Equal("application/problem+json", context.Response.ContentType);
+        body.Position = 0;
+        using var document = await JsonDocument.ParseAsync(body);
+        var problem = document.RootElement;
+        Assert.Equal(type, problem.GetProperty("type").GetString());
+        Assert.Equal(detail, problem.GetProperty("detail").GetString());
+        Assert.Equal(409, problem.GetProperty("status").GetInt32());
+        Assert.Equal(context.Request.Path.Value, problem.GetProperty("instance").GetString());
+        Assert.Equal(context.TraceIdentifier, problem.GetProperty("traceId").GetString());
+        Assert.Empty(logger.Entries);
+    }
+
     [Fact] public async Task StartedResponsePropagatesExceptionWithoutRewriting()
     {
         var context = new DefaultHttpContext();

@@ -13,3 +13,9 @@
 For example, a request with `customerType: "Individual"` and a nonblank `tradeName` is invalid. The API responds with HTTP 400 and a `ValidationProblemDetails` whose `detail` explains that trade names are only allowed for companies; field errors are also available in `errors`. An invalid JSON value or missing field is reported in `detail` without including the submitted value. Duplicate tax IDs return 409; unexpected failures return 500 with generic details. Successful creation returns 201 and a `Location` header for the customer resource URL at `GET /api/customers/{id}`.
 
 Customer creation is temporarily anonymous and is not intended for production until access is protected.
+
+## Customer update business rules
+
+`PUT /api/customers/{id}` replaces all editable fields using the same normalization and validation rules as creation. The route supplies the immutable, non-empty customer ID. All editable fields are required except `tradeName`. An omitted, null, or blank trade name clears the existing value. An Individual cannot have a nonblank trade name.
+
+The request requires a non-empty version UUID from a previous customer response. A successful update returns the complete customer with a different version, even when the editable values are unchanged. A customer may retain its own tax ID. A tax ID already used by another customer and an outdated version are separate HTTP 409 conflicts. Validation and rejected writes do not change the stored values or version. Customer update is temporarily anonymous.
