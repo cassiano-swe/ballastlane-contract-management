@@ -2,6 +2,8 @@
 
 BallastLane is a contract-management interview exercise. The Angular workspace provides sign-in, an authenticated dashboard and Customer management. The business API supports customer creation, listing, retrieval, update, and deactivation. The Identity API authenticates users and issues the access tokens required by Customer operations. Contract CRUD is TODO. User management and the separate Generative AI Tools assignment are out of scope. The temporary percentage example demonstrates the API architecture.
 
+Informal user story: **As an authenticated customer administrator, I want to create, view, edit and deactivate customers so that I can maintain customer records without losing their history.**
+
 The solution uses .NET 10, ASP.NET Core MVC API controllers, FluentValidation, Npgsql/ADO.NET, JWT bearer validation, Swagger, Angular standalone components and routing, PostgreSQL, and Docker Compose. See [customer business rules](docs/customer-business-rules.md), [architecture](docs/architecture.md), [development guide](docs/development-guide.md), and [testing strategy](docs/testing-strategy.md).
 
 ## Layout
@@ -52,6 +54,18 @@ npm start
 
 Run long-lived commands in separate terminals. The business API is at `http://localhost:5101` with Swagger at `http://localhost:5101/swagger`. The Identity API is at `http://localhost:5102` with Swagger at `http://localhost:5102/swagger`. Each exposes `/health`. Open the frontend at `http://localhost:4200`. The Angular development proxy forwards `/business-api/` and `/identity-api/` to the corresponding loopback hosts, removing the prefix. The browser uses the same origin for the SPA and its API calls, so this setup requires no CORS changes. Use the existing explicit origin configuration for separate cross-origin clients. The local APIs listen over HTTP. The example `POST /api/examples/calculate-percentage` accepts `{"value":200,"percentage":25}` and returns `{"amount":50}` in Development only.
 
+## Frontend Login Instructions
+
+This account is public and intended only for local development and demonstrations. Never use these credentials in production.
+
+1. Start PostgreSQL, apply migrations `001` through `005`, apply `database/seeds/001_create_demo_user.sql`, and start IdentityApi and WebApi as described above.
+2. Start Angular with `cd src/Presentation/BallastLane.Web && npm ci && npm start`, then open `http://localhost:4200/login`.
+3. Enter Email: `demo@ballastlane.example` and Password: `BallastLane@2026!`.
+4. Click **Sign in**. Verify navigation to the authenticated dashboard, then select **Customers**.
+5. Use **Logout** to end the local session. A full page reload also requires login again because the access token is held only in memory.
+
+With Docker Compose, start the stack using `docker compose up -d --build --wait`, run the migration and seed commands below, and use the same URL and login steps. The password is documented only for this public demo account and is not embedded in Angular source or configuration.
+
 ## Operations and limitations
 
 Built-in logging is configured in each API's appsettings files and can be overridden with environment variables, e.g. `Logging__LogLevel__Default`. Request completion logs contain a route template, status, elapsed time and trace identifier, but no bodies, query strings or authorization data. Handled errors return `application/problem+json` with a trace identifier and generic unexpected-error details. Request cancellation is propagated.
@@ -83,6 +97,14 @@ docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_
 docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < database/migrations/004_create_users.sql
 docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < database/migrations/005_add_customer_authorship.sql
 ```
+
+After all migrations and the demo user seed, optionally load the 15 fictional Customer records:
+
+```sh
+docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < database/seeds/002_create_demo_customers.sql
+```
+
+The Customer seed contains 11 active and four inactive records and attributes their creation to the demo user. Rerunning it neither duplicates nor updates its fixed IDs. A tax ID conflict owned by a different row fails and rolls back instead of overwriting data. Apply seeds only after identifying the target as a local/demo database.
 
 The second migration adds the seventh customer column and backfills a distinct UUID per existing customer inside one transaction. Verify with `\d customers` in psql that `version` is `uuid NOT NULL` with the `ck_customers_version` check. Compare the row count and the six original columns before and after, and verify that every row has a non-empty version. Coordinate the migration with the API deployment because the old API writes without the column and the new API reads and writes it.
 
@@ -226,7 +248,7 @@ The login response returns `accessToken`, `tokenType`, and `expiresIn` with `Cac
 
 In Development Swagger, obtain the token from the Identity API at `http://localhost:5102/swagger` and paste just the JWT into **Authorize** on the business API at `http://localhost:5101/swagger`. Use HTTPS outside isolated local development. The two hosts share a symmetric key, so both can technically issue tokens. Tokens expire after the configured lifetime and are not revoked immediately if an account becomes inactive. Login rate limiting is outside this delivery.
 
-Public registration is excluded by the project owner. Review this decision against the original interview requirements.
+Public registration is excluded by the project owner. This is an agreed scope decision but remains a compliance gap against the exercise's user-creation requirement. IdentityApi exposes anonymous login and health only; it has no protected endpoint of its own. Login rate limiting is not implemented and is required before an internet-facing deployment.
 
 ## Angular authentication
 
@@ -258,3 +280,13 @@ npm ci
 npm run build
 npm test -- --watch=false --browsers=ChromeHeadless
 ```
+
+## Tests, decisions and known limitations
+
+Backend tests use disposable PostgreSQL 17 Testcontainers databases and the actual migrations; they never use the development database. They cover migration behavior, both seed scripts, real cross-host JWT validation, invalid/expired JWTs, authenticated Customer CRUD, authorship, uniqueness races and optimistic-concurrency races. Unit projects cover Domain, Application, Infrastructure and both MVC hosts. Angular specs cover auth state, guards, scoped interception, HTTP contracts, forms, stable error handling and stale-conflict behavior. Current execution results belong in the delivery report, not as a permanent pass-count claim.
+
+Dependencies point inward, HTTP DTO mapping is explicit, and persistence uses parameterized Npgsql/ADO.NET through pooled `NpgsqlDataSource`; Entity Framework, Dapper and Mediator are absent. Customer deletion is a soft deactivation, inactive tax IDs remain reserved, and successful writes renew the UUID version through an atomic `id + version` predicate. JWTs are HS256 tokens with issuer, audience, signature, lifetime and algorithm validation. Angular stores the token only in memory; logout is local and issued tokens have no server-side revocation.
+
+HTTPS termination and trusted-forwarded-header configuration are deployment responsibilities. Local endpoints use HTTP and the APIs intentionally do not trust proxy headers by default. Swagger is Development-only. Contract CRUD, registration, refresh tokens, RBAC, pagination/filtering and reactivation remain unimplemented. The IdentityApi-specific user-creation/protected-endpoint requirements and login rate limiting remain known gaps.
+
+The original exercise PDF was unavailable during final review. See [requirements compliance](docs/requirements-compliance.md) for the evidence matrix and source limitation, and [technical presentation](docs/technical-presentation.md) for the interview walkthrough.
