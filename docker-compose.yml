@@ -14,5 +14,49 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+      args:
+        API_PROJECT: BallastLane.WebApi
+    environment: &api-environment
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=${POSTGRES_DB:?Set POSTGRES_DB};Username=${POSTGRES_USER:?Set POSTGRES_USER};Password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}"
+      Jwt__Issuer: ${JWT_ISSUER:?Set JWT_ISSUER}
+      Jwt__Audience: ${JWT_AUDIENCE:?Set JWT_AUDIENCE}
+      Jwt__SigningKey: ${JWT_SIGNING_KEY:?Set JWT_SIGNING_KEY}
+      Cors__Origins__0: http://localhost:4200
+    ports:
+      - "127.0.0.1:5101:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  identity-api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+      args:
+        API_PROJECT: BallastLane.IdentityApi
+    environment: *api-environment
+    ports:
+      - "127.0.0.1:5102:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+    ports:
+      - "127.0.0.1:4200:80"
+    depends_on:
+      - api
+      - identity-api
+
 volumes:
   postgres_data:

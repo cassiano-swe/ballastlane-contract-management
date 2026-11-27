@@ -1,0 +1,13 @@
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+ARG API_PROJECT
+WORKDIR /src
+COPY . .
+RUN dotnet publish "src/Presentation/${API_PROJECT}/${API_PROJECT}.csproj" --configuration Release --output /app/publish --no-self-contained
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+ARG API_PROJECT
+ENV API_PROJECT=${API_PROJECT}
+WORKDIR /app
+COPY --from=build /app/publish .
+EXPOSE 8080
+CMD ["sh", "-c", "exec dotnet \"${API_PROJECT}.dll\""]
